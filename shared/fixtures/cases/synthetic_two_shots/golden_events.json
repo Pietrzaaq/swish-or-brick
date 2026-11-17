@@ -1,0 +1,18 @@
+{
+ "shots": [
+  {
+   "shot": 1,
+   "outcome": "make",
+   "t_start": 0.7333,
+   "t_resolve": 1.4333,
+   "reason": "through_rim"
+  },
+  {
+   "shot": 2,
+   "outcome": "miss",
+   "t_start": 3.7333,
+   "t_resolve": 4.1667,
+   "reason": "wide"
+  }
+ ]
+}

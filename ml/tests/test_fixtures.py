@@ -5,7 +5,7 @@ import unittest
 
 from brickorswish.logic import ShotLogicConfig, process
 from brickorswish.paths import CONFIG_V1, FIXTURE_CASES
-from brickorswish.tools import gen_synthetic
+from brickorswish.tools import gen_synthetic, update_golden
 
 FRAME_TOL = 1.0 / 30.0 + 1e-9
 
@@ -40,6 +40,18 @@ class FixtureCasesTest(unittest.TestCase):
             with self.subTest(case=case.name):
                 det, hoop = _load(case / "detections.json"), _load(case / "hoop.json")
                 self.assertEqual(process(det, hoop, self.cfg), process(det, hoop, self.cfg))
+
+
+class GoldenEventsUpToDateTest(unittest.TestCase):
+    """golden_events.json is what the Dart port is checked against."""
+
+    def test_golden_matches_current_logic(self):
+        cfg = ShotLogicConfig.load(CONFIG_V1)
+        for case in sorted(p for p in FIXTURE_CASES.iterdir() if p.is_dir()):
+            with self.subTest(case=case.name):
+                fresh = json.loads(json.dumps(update_golden.golden_for(case, cfg)))
+                self.assertEqual(fresh, _load(case / "golden_events.json"),
+                                 "run: py -m brickorswish.tools.update_golden")
 
 
 class SyntheticFixturesUpToDateTest(unittest.TestCase):

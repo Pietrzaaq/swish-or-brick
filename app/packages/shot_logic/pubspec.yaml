@@ -1,0 +1,11 @@
+name: shot_logic
+description: BrickOrSwish shot logic (tracker + make/miss state machine). Pure Dart port of ml/brickorswish/logic.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.6.0
+
+# No runtime dependencies, on purpose: this package must stay pure Dart (no Flutter, no I/O in lib/).
+dev_dependencies:
+  test: ^1.25.0

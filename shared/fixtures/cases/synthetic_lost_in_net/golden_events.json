@@ -1,0 +1,11 @@
+{
+ "shots": [
+  {
+   "shot": 1,
+   "outcome": "uncertain",
+   "t_start": 0.7333,
+   "t_resolve": 2.0,
+   "reason": "lost_in_net"
+  }
+ ]
+}
