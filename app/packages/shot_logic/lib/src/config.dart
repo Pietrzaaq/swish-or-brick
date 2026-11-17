@@ -1,4 +1,4 @@
-/// Typed view of shared/config/shot_logic.v<N>.json.
+/// Typed view of `shared/config/shot_logic.v<N>.json`.
 class ShotLogicConfig {
   final int version;
 
