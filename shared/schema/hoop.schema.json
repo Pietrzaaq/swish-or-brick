@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Hoop calibration",
+  "description": "Three manual clicks in pixel coordinates of the full frame. y grows downward.",
+  "type": "object",
+  "required": ["image_width", "image_height", "left", "right", "front"],
+  "additionalProperties": false,
+  "properties": {
+    "image_width": { "type": "integer", "minimum": 1 },
+    "image_height": { "type": "integer", "minimum": 1 },
+    "left": { "$ref": "#/$defs/point", "description": "Left edge of the rim." },
+    "right": { "$ref": "#/$defs/point", "description": "Right edge of the rim." },
+    "front": { "$ref": "#/$defs/point", "description": "Front or back edge of the rim; sets the ellipse height." }
+  },
+  "$defs": {
+    "point": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2 }
+  }
+}

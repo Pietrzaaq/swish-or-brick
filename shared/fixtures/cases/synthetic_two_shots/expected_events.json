@@ -1,0 +1,12 @@
+{
+ "shots": [
+  {
+   "shot": 1,
+   "outcome": "make"
+  },
+  {
+   "shot": 2,
+   "outcome": "miss"
+  }
+ ]
+}

@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Detections",
+  "description": "Detector output per frame, in full-frame pixel coordinates. Frames with no detections must still be listed so the logic sees time passing.",
+  "type": "object",
+  "required": ["fps", "frames"],
+  "additionalProperties": false,
+  "properties": {
+    "fps": { "type": "number", "exclusiveMinimum": 0, "description": "Nominal capture rate; informational. Logic uses per-frame t." },
+    "source": { "type": "string", "description": "Free text: video file, detector name and version, or 'synthetic'." },
+    "frames": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["i", "t", "dets"],
+        "additionalProperties": false,
+        "properties": {
+          "i": { "type": "integer", "minimum": 0, "description": "Frame index." },
+          "t": { "type": "number", "minimum": 0, "description": "Timestamp in seconds (sensor time when available). Strictly increasing." },
+          "dets": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["cls", "conf", "x", "y", "w", "h"],
+              "additionalProperties": false,
+              "properties": {
+                "cls": { "type": "string", "description": "'ball', 'hoop', 'person', ... Only 'ball' is used in v1." },
+                "conf": { "type": "number", "minimum": 0, "maximum": 1 },
+                "x": { "type": "number", "description": "Box centre x, pixels." },
+                "y": { "type": "number", "description": "Box centre y, pixels." },
+                "w": { "type": "number", "minimum": 0 },
+                "h": { "type": "number", "minimum": 0 }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

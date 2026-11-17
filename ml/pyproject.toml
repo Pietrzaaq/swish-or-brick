@@ -1,0 +1,17 @@
+[project]
+name = "brickorswish"
+version = "0.1.0"
+description = "Reference implementation of BrickOrSwish shot logic (standard library only)."
+requires-python = ">=3.12"
+license = "MIT"
+# Intentionally empty: brickorswish.logic, .eval and .tools must stay standard-library only
+# so they can run on any machine without third-party code. Detector code (later) gets an
+# optional dependency group that runs only in the cloud.
+dependencies = []
+
+[build-system]
+requires = ["setuptools>=77"]  # SPDX string in `license`
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["brickorswish*"]

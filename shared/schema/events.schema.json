@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Shot events",
+  "description": "Output of process(): one entry per resolved shot attempt, in time order. expected_events.json in fixtures uses the same shape, but there only 'shot' and 'outcome' are required; t_start, t_resolve and reason are checked when present (times with ±1 frame tolerance).",
+  "type": "object",
+  "required": ["shots"],
+  "additionalProperties": false,
+  "properties": {
+    "shots": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["shot", "outcome", "t_start", "t_resolve", "reason"],
+        "additionalProperties": false,
+        "properties": {
+          "shot": { "type": "integer", "minimum": 1 },
+          "outcome": { "enum": ["make", "miss", "uncertain"] },
+          "t_start": { "type": "number", "description": "Ball entered the approach zone moving down." },
+          "t_resolve": { "type": "number", "description": "Frame time at which the outcome was decided." },
+          "reason": { "type": "string", "description": "Short machine-readable cause, e.g. 'through_rim', 'wide', 'lost'." }
+        }
+      }
+    }
+  }
+}
