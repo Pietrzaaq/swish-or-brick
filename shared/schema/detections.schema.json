@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Detections",
-  "description": "Detector output per frame, in full-frame pixel coordinates. Frames with no detections must still be listed so the logic sees time passing.",
+  "description": "Detector output per frame, in full-frame pixel coordinates of the frame the hoop was marked on (hoop.json). If the camera moved, positions are mapped back to that frame by the detection stage (ml/brickorswish/detect/motion.py), so the logic never sees camera motion. Frames with no detections, including frames where the hoop was lost, must still be listed so the logic sees time passing.",
   "type": "object",
   "required": ["fps", "frames"],
   "additionalProperties": false,

@@ -8,6 +8,8 @@ from ..logic import HoopFrame, ShotLogicConfig
 from ..logic.pipeline import ball_candidates
 from ..logic.state_machine import MAKE, MISS, ShotStateMachine
 from ..logic.tracker import BallTracker
+from .crop import watch_crop
+from .motion import IDENTITY, Transform, rim_centre, shift_hoop, to_frame
 
 # BGR
 ORANGE = (0, 140, 255)
@@ -29,14 +31,19 @@ def annotate_video(
     hoop: dict,
     detections: dict,
     cfg: ShotLogicConfig,
-    crop_box: tuple[int, int, int, int] | None = None,
+    crop: str = "hoop",
+    transforms: list[Transform | None] | None = None,
 ) -> Path:
     """Writes out_path (H.264 if ffmpeg is available, else mp4v). Re-runs tracker + state machine per frame
-    (same steps as process()) so the overlay shows the live state."""
+    (same steps as process()) so the overlay shows the live state.
+
+    `detections` are in calibration-frame pixels; `transforms` (camera pose per frame, None = hoop lost)
+    puts the hoop, crop, boxes and ball back where they are in each actual frame."""
     import cv2
 
     out_path = Path(out_path)
-    hf = HoopFrame.from_dict(hoop)
+    hf = HoopFrame.from_dict(hoop)  # calibration frame: what the logic sees
+    c0 = rim_centre(hoop)
     tracker, machine = BallTracker(cfg), ShotStateMachine(cfg)
     cap = cv2.VideoCapture(str(video_path))
     w, h = int(hoop["image_width"]), int(hoop["image_height"])
@@ -58,14 +65,26 @@ def annotate_video(
                 counts[event.outcome] += 1
                 banner = (f"{event.outcome.upper()} ({event.reason})", OUTCOME_COLOUR.get(event.outcome, YELLOW), t + BANNER_S)
 
-            if crop_box is not None and tuple(crop_box) != (0, 0, w, h):
-                cv2.rectangle(img, crop_box[:2], crop_box[2:], GREY, 1)
-            _draw_zone(img, hf, cfg)
-            _draw_hoop(img, hf, s)
-            for d in fr["dets"]:
-                _draw_det(img, d, hf, cfg, s)
-            if ball is not None:
-                p = tuple(int(round(v)) for v in hf.to_pixels(ball.x, ball.y))
+            tr = IDENTITY if transforms is None else transforms[min(fr["i"], len(transforms) - 1)]
+            hud_extra = []
+            if tr is None:
+                hud_extra.append(("HOOP NOT FOUND: not counting", RED))
+                tr_draw = None
+            else:
+                tr_draw = tr
+                moved = shift_hoop(hoop, tr)
+                hf_now = HoopFrame.from_dict(moved)
+                if crop == "hoop":
+                    box = watch_crop(moved, cfg)
+                    cv2.rectangle(img, box[:2], box[2:], GREY, 1)
+                _draw_zone(img, hf_now, cfg)
+                _draw_hoop(img, hf_now, s)
+                if tr != IDENTITY:
+                    hud_extra.append((f"camera moved: hoop ({tr[0]:+.0f}, {tr[1]:+.0f}) px", YELLOW))
+                for d in fr["dets"]:
+                    _draw_det(img, d, hf, cfg, s, c0, tr)
+            if ball is not None and tr_draw is not None:
+                p = tuple(int(round(v)) for v in to_frame(*hf.to_pixels(ball.x, ball.y), c0, tr_draw))
                 trail = (trail + [p])[-TRAIL:]
                 cv2.circle(img, p, int(6 * s), GREEN, -1 if ball.observed else int(2 * s))
             else:
@@ -81,8 +100,10 @@ def annotate_video(
             ]
             for k, line in enumerate(hud):
                 _text(img, line, (int(12 * s), int((30 + 30 * k) * s)), 0.7 * s, WHITE)
+            for k, (line, colour) in enumerate(hud_extra):
+                _text(img, line, (int(12 * s), int((120 + 30 * k) * s)), 0.7 * s, colour)
             if banner is not None and t <= banner[2]:
-                _text(img, banner[0], (int(12 * s), int(150 * s)), 1.4 * s, banner[1], thick=3)
+                _text(img, banner[0], (int(12 * s), int(200 * s)), 1.4 * s, banner[1], thick=3)
             writer.write(img)
     finally:
         cap.release()
@@ -139,11 +160,15 @@ def _draw_zone(img, hf: HoopFrame, cfg: ShotLogicConfig) -> None:
     cv2.polylines(img, [np.array(pts, dtype=np.int32)], True, YELLOW, 1)
 
 
-def _draw_det(img, d: dict, hf: HoopFrame, cfg: ShotLogicConfig, s: float) -> None:
+def _draw_det(img, d: dict, hf: HoopFrame, cfg: ShotLogicConfig, s: float,
+              c0: tuple[float, float], tr: Transform) -> None:
+    """d is in calibration-frame pixels (what the logic sees); drawn where it is in this frame."""
     import cv2
 
-    x0, y0 = int(round(d["x"] - d["w"] / 2)), int(round(d["y"] - d["h"] / 2))
-    x1, y1 = int(round(d["x"] + d["w"] / 2)), int(round(d["y"] + d["h"] / 2))
+    cx, cy = to_frame(d["x"], d["y"], c0, tr)
+    bw, bh = d["w"] * tr[2], d["h"] * tr[2]
+    x0, y0 = int(round(cx - bw / 2)), int(round(cy - bh / 2))
+    x1, y1 = int(round(cx + bw / 2)), int(round(cy + bh / 2))
     if d["cls"] == "ball":
         size = hf.size_in_rim_diameters(d["w"], d["h"])
         used = d["conf"] >= cfg.ball_min_conf and cfg.ball_min_size_rim_d <= size <= cfg.ball_max_size_rim_d

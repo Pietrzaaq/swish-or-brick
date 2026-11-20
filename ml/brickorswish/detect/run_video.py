@@ -1,16 +1,22 @@
-"""video + hoop.json -> detections.json, events.json, annotated.mp4 in one output folder.
+"""video + hoop.json -> camera_motion.json, detections.json, events.json, annotated.mp4 in one folder.
 
-    python -m brickorswish.detect.run_video VIDEO --hoop hoop.json --out OUT_DIR
+    python -m brickorswish.detect.run_video VIDEO --hoop hoop.json --out OUT_DIR [--hoop-frame N]
+
+hoop.json holds your taps on frame N (--hoop-frame). The camera may move afterwards: the hoop is
+re-found every 0.5 s (stabilize.py), detections are mapped back to frame N's pixels, and spans where
+the hoop cannot be found are not counted. --no-stabilize assumes a still camera.
 
 Needs `opencv-python` and `rfdetr`. Cloud only (Colab); see ml/notebooks/detect_video.ipynb.
 """
 
 import argparse
 import json
+from dataclasses import asdict
 from pathlib import Path
 
-from ..logic import ShotLogicConfig, process
+from ..logic import HoopFrame, ShotLogicConfig, process
 from ..paths import CONFIG_V1
+from .motion import MotionConfig, describe, frame_transforms, lost_spans, plan_segments
 
 
 def run(
@@ -22,6 +28,9 @@ def run(
     threshold: float = 0.15,
     batch_size: int = 8,
     annotate: bool = True,
+    hoop_frame: int = 0,
+    stabilize: bool = True,
+    motion_cfg: MotionConfig | None = None,
     log=print,
 ) -> dict:
     from .annotate import annotate_video
@@ -32,8 +41,12 @@ def run(
     out.mkdir(parents=True, exist_ok=True)
     _dump(out / "hoop.json", hoop)
 
+    transforms = None
+    if stabilize:
+        transforms = _camera_motion(video, hoop, hoop_frame, motion_cfg or MotionConfig(), out, log)
+
     log("detecting...")
-    detections, box = detect_video(video, hoop, cfg, model or load_model(), crop, threshold, batch_size, log)
+    detections = detect_video(video, hoop, cfg, model or load_model(), crop, threshold, batch_size, transforms, log)
     _dump(out / "detections.json", detections)
 
     events = process(detections, hoop, cfg)
@@ -44,9 +57,36 @@ def run(
 
     if annotate:
         log("annotating video...")
-        annotate_video(video, out / "annotated.mp4", hoop, detections, cfg, box)
+        annotate_video(video, out / "annotated.mp4", hoop, detections, cfg, crop, transforms)
     log(f"written to {out}")
     return events
+
+
+def _camera_motion(video, hoop: dict, hoop_frame: int, mcfg: MotionConfig, out: Path, log) -> list:
+    from .stabilize import measure_motion
+
+    log("tracking the hoop (camera motion)...")
+    checks, n_frames, fps, every = measure_motion(video, hoop, hoop_frame, mcfg, log)
+    r = HoopFrame.from_dict(hoop).radius_px
+    segments = plan_segments(checks, r, mcfg)
+    transforms = frame_transforms(segments, n_frames, every, mcfg)
+    timeline = describe(segments, transforms, fps)
+    for line in timeline:
+        log("  " + line)
+    lost = sum(tr is None for tr in transforms)
+    if lost:
+        log(f"  WARNING: hoop not found in {lost / fps:.0f} s of {n_frames / fps:.0f} s; shots there are not counted. "
+            "If that is most of the video, tap the hoop on a later frame (HOOP_AT_S).")
+    _dump(out / "camera_motion.json", {
+        "hoop_frame": hoop_frame,
+        "check_every_frames": every,
+        "timeline": timeline,
+        "segments": [asdict(s) for s in segments],
+        "lost": [{"from_i": a, "to_i": b, "from_t": round(a / fps, 3), "to_t": round((b + 1) / fps, 3)}
+                 for a, b in lost_spans(transforms)],
+        "checks": [asdict(c) for c in checks],
+    })
+    return transforms
 
 
 def _dump(path: Path, data: dict) -> None:
@@ -64,11 +104,13 @@ def main() -> None:
     ap.add_argument("--threshold", type=float, default=0.15)
     ap.add_argument("--batch", type=int, default=8)
     ap.add_argument("--no-video", action="store_true", help="skip the annotated video")
+    ap.add_argument("--hoop-frame", type=int, default=0, help="frame index the hoop taps were made on")
+    ap.add_argument("--no-stabilize", action="store_true", help="assume the camera never moves")
     args = ap.parse_args()
     with open(args.hoop, encoding="utf-8") as fh:
         hoop = json.load(fh)
     run(args.video, hoop, args.out, crop=args.crop, threshold=args.threshold, batch_size=args.batch,
-        annotate=not args.no_video)
+        annotate=not args.no_video, hoop_frame=args.hoop_frame, stabilize=not args.no_stabilize)
 
 
 if __name__ == "__main__":

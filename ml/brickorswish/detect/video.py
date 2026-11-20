@@ -9,6 +9,7 @@ from pathlib import Path
 
 from ..logic import ShotLogicConfig
 from .crop import box_to_det, frame_time, watch_crop
+from .motion import IDENTITY, Transform, rim_centre, shift_hoop, stabilize_dets
 
 
 def load_model():
@@ -43,12 +44,18 @@ def detect_video(
     crop: str = "hoop",
     threshold: float = 0.15,
     batch_size: int = 8,
+    transforms: list[Transform | None] | None = None,
     log: Callable[[str], None] = print,
-) -> tuple[dict, tuple[int, int, int, int]]:
-    """Returns (detections, crop_box). crop="hoop" runs on the watch zone around the rim, "full" on the whole frame.
+) -> dict:
+    """Detections in the CALIBRATION frame's pixel coordinates (the frame hoop.json was tapped on).
 
-    `threshold` is deliberately below cfg.ball_min_conf: the logic does its own filtering, and the low-confidence
-    boxes are useful when judging recall.
+    crop="hoop" runs on the watch zone around the rim, "full" on the whole frame. `transforms` (from
+    stabilize/motion) gives the camera pose per frame: the crop follows the hoop, boxes are mapped back
+    to the calibration frame, and frames with None (hoop lost) get no detections, so nothing is counted
+    there. Without transforms the camera is assumed still.
+
+    `threshold` is deliberately below cfg.ball_min_conf: the logic does its own filtering, and the
+    low-confidence boxes are useful when judging recall.
     """
     import cv2
 
@@ -59,15 +66,16 @@ def detect_video(
         raise ValueError(f"cannot open video: {video_path}")
     fps = float(cap.get(cv2.CAP_PROP_FPS)) or 30.0
     total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    frames: list[dict] = []
-    pending: list[tuple[int, object]] = []
-    box = None
+    c0 = rim_centre(hoop)
+    frames: dict[int, dict] = {}
+    pending: list[tuple[int, object, tuple[int, int, int, int], Transform]] = []
     started = time.monotonic()
+    size_checked = False
 
     def flush():
-        results = model.predict([img for _, img in pending], threshold=threshold, include_source_image=False)
-        for (i, _), dets in zip(pending, results):
-            frames.append({"i": i, "t": frame_time(i, fps), "dets": _to_dets(dets, (box[0], box[1]))})
+        results = model.predict([img for _, img, _, _ in pending], threshold=threshold, include_source_image=False)
+        for (i, _, box, tr), dets in zip(pending, results):
+            frames[i] = {"i": i, "t": frame_time(i, fps), "dets": stabilize_dets(_to_dets(dets, box[:2]), c0, tr)}
         pending.clear()
 
     try:
@@ -76,16 +84,24 @@ def detect_video(
             ok, bgr = cap.read()
             if not ok:
                 break
-            if box is None:
-                h, w = bgr.shape[:2]
+            h, w = bgr.shape[:2]
+            if not size_checked:
                 if (w, h) != (hoop["image_width"], hoop["image_height"]):
                     raise ValueError(f"video is {w}x{h} but hoop.json is {hoop['image_width']}x{hoop['image_height']}")
-                box = watch_crop(hoop, cfg) if crop == "hoop" else (0, 0, w, h)
-                log(f"{w}x{h} @ {fps:.2f} fps, ~{total} frames, detector crop {box}")
-            x0, y0, x1, y1 = box
-            pending.append((i, cv2.cvtColor(bgr[y0:y1, x0:x1], cv2.COLOR_BGR2RGB)))
-            if len(pending) == batch_size:
-                flush()
+                log(f"{w}x{h} @ {fps:.2f} fps, ~{total} frames")
+                size_checked = True
+            if transforms is None:
+                tr = IDENTITY
+            else:
+                tr = transforms[min(i, len(transforms) - 1)]
+            if tr is None:
+                frames[i] = {"i": i, "t": frame_time(i, fps), "dets": []}  # hoop lost: detect nothing
+            else:
+                box = watch_crop(shift_hoop(hoop, tr), cfg) if crop == "hoop" else (0, 0, w, h)
+                x0, y0, x1, y1 = box
+                pending.append((i, cv2.cvtColor(bgr[y0:y1, x0:x1], cv2.COLOR_BGR2RGB), box, tr))
+                if len(pending) == batch_size:
+                    flush()
             i += 1
             if total and i % max(1, total // 10) == 0:
                 log(f"  {i}/{total} frames, {time.monotonic() - started:.0f}s")
@@ -93,7 +109,7 @@ def detect_video(
             flush()
     finally:
         cap.release()
-    if box is None:
+    if not frames:
         raise ValueError(f"no frames decoded from {video_path}")
 
     try:
@@ -102,8 +118,9 @@ def detect_video(
         rf_version = version("rfdetr")
     except Exception:  # noqa: BLE001 - informational only
         rf_version = "?"
-    source = f"{Path(video_path).name} | rfdetr {rf_version} nano coco | crop={crop} {list(box)} | thr={threshold}"
-    return {"fps": round(fps, 3), "source": source, "frames": frames}, box
+    moving = "stabilized" if transforms is not None else "still camera"
+    source = f"{Path(video_path).name} | rfdetr {rf_version} nano coco | crop={crop} | thr={threshold} | {moving}"
+    return {"fps": round(fps, 3), "source": source, "frames": [frames[k] for k in sorted(frames)]}
 
 
 def _to_dets(dets, offset: tuple[int, int]) -> list[dict]:
