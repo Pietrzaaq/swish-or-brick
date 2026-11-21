@@ -30,6 +30,15 @@ class MotionConfig:
     min_run: int = 3  # agreeing checks in a row before a pose is trusted (1.5 s at 0.5 s checks)
     max_bridge_checks: int = 2  # failed checks between two trusted poses that are bridged, not marked lost
     scales: tuple[float, ...] = (0.8, 0.9, 1.0, 1.1, 1.25)
+    # A template cut while the phone was still being handled (tilted) matches the steady view only weakly, and a
+    # weak match lets a wrong zoom win. Once min_run checks agree on a pose that differs from the template's own
+    # (the camera settled somewhere else), or match weaker than this, the template is re-cut from the live frame.
+    reanchor_below: float = 0.9
+    reanchor_min_score: float = 0.7  # never re-cut from a doubtful match: a wrong template would be followed for good
+    scale_switch_margin: float = 0.05  # a different zoom must beat the current one by this much to be believed
+    # Ball as a ruler: ball width / rim width is the same in every segment (both scale with the camera).
+    ball_rim_ratio: float = 0.53  # size 7 ball 24 cm / rim 45 cm
+    ball_ratio_tol: float = 0.12  # segments disagreeing by more than this have a wrong zoom (or bad taps)
 
 
 @dataclass(frozen=True)
@@ -128,6 +137,76 @@ def lost_spans(transforms: list[Transform | None]) -> list[tuple[int, int]]:
     if start is not None:
         spans.append((start, len(transforms) - 1))
     return spans
+
+
+def compose(base: Transform, rel: Transform) -> Transform:
+    """Pose `rel` measured against an anchor frame that is itself at `base` -> pose from the calibration frame.
+    Both scale around the rim centre, so shifts add and scales multiply."""
+    return (base[0] + rel[0], base[1] + rel[1], base[2] * rel[2])
+
+
+def should_reanchor(since_anchor: list[Check], anchor_pose: Transform, rim_radius_px: float,
+                    cfg: MotionConfig) -> bool:
+    """True when the last min_run checks since the current template was cut are all found and agree, and either
+    sit at a different pose than the template's frame (camera settled elsewhere) or match it only weakly."""
+    run = since_anchor[-cfg.min_run:]
+    if len(run) < cfg.min_run or any(c.score < cfg.reanchor_min_score for c in run):
+        return False
+    tol = cfg.agree_tol * rim_radius_px
+    pose = _pose(run)
+    if not all(_agree(pose, (c.dx, c.dy, c.scale), tol, cfg.agree_scale_tol) for c in run):
+        return False
+    moved = not _agree(pose, anchor_pose, tol, cfg.agree_scale_tol)
+    weak = median(c.score for c in run) < cfg.reanchor_below
+    return moved or weak
+
+
+def pick_scale(candidates: list[tuple[float, float, object]], current_scale: float, margin: float):
+    """candidates: (score, scale, payload). The best one, except that a different zoom has to beat the best
+    match at the current zoom by `margin`: a phone that was not touched does not zoom."""
+    if not candidates:
+        return None
+    best = max(candidates, key=lambda c: c[0])
+    same = [c for c in candidates if abs(c[1] - current_scale) < 1e-6]
+    if same and abs(best[1] - current_scale) >= 1e-6:
+        keep = max(same, key=lambda c: c[0])
+        if best[0] < keep[0] + margin:
+            return keep
+    return best
+
+
+def ball_size_check(detections: dict, hoop: dict, segments: list[Segment], cfg: MotionConfig) -> dict:
+    """Median ball width / rim width near the rim, per camera segment. A wrong zoom makes the ball look too big or
+    too small against the rim, so segments that disagree (or are far from a real ball) are flagged."""
+    from ..logic import HoopFrame
+
+    hf = HoopFrame.from_dict(hoop)
+    rows = []
+    for seg in segments:
+        sizes = []
+        for f in detections["frames"]:
+            if not seg.from_i <= f["i"] <= seg.to_i:
+                continue
+            for d in f["dets"]:
+                if d["cls"] != "ball" or d["conf"] < 0.3:
+                    continue
+                u, v = hf.to_hoop(d["x"], d["y"])
+                if abs(u) < 2.5 and -4.0 < v < 3.0:  # near the rim: same distance from the camera as the rim
+                    sizes.append(d["w"] / (2.0 * hf.radius_px))
+        rows.append({"from_i": seg.from_i, "to_i": seg.to_i, "n": len(sizes),
+                     "ratio": round(median(sizes), 3) if sizes else None})
+    usable = [r for r in rows if r["n"] >= 5]
+    warnings = []
+    if len(usable) >= 2:
+        lo, hi = min(r["ratio"] for r in usable), max(r["ratio"] for r in usable)
+        if hi / lo > 1.0 + cfg.ball_ratio_tol:
+            warnings.append(f"ball size vs rim differs between camera segments ({lo:.2f} vs {hi:.2f}): "
+                            "one of them probably has a wrong zoom")
+    for r in usable:
+        if abs(r["ratio"] / cfg.ball_rim_ratio - 1.0) > 2 * cfg.ball_ratio_tol:
+            warnings.append(f"ball looks {r['ratio']:.2f} of the rim width (real ball: {cfg.ball_rim_ratio}) in "
+                            f"frames {r['from_i']}-{r['to_i']}: check the hoop taps or the zoom")
+    return {"expected": cfg.ball_rim_ratio, "segments": rows, "warnings": warnings}
 
 
 def rim_centre(hoop: dict) -> tuple[float, float]:

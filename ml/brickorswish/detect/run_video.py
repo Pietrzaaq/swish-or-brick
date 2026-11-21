@@ -16,7 +16,7 @@ from pathlib import Path
 
 from ..logic import HoopFrame, ShotLogicConfig, process
 from ..paths import CONFIG_V1
-from .motion import MotionConfig, describe, frame_transforms, lost_spans, plan_segments
+from .motion import MotionConfig, Segment, ball_size_check, describe, frame_transforms, lost_spans, plan_segments
 
 
 def run(
@@ -42,12 +42,24 @@ def run(
     _dump(out / "hoop.json", hoop)
 
     transforms = None
+    mcfg = motion_cfg or MotionConfig()
     if stabilize:
-        transforms = _camera_motion(video, hoop, hoop_frame, motion_cfg or MotionConfig(), out, log)
+        transforms, motion = _camera_motion(video, hoop, hoop_frame, mcfg, out, log)
 
     log("detecting...")
     detections = detect_video(video, hoop, cfg, model or load_model(), crop, threshold, batch_size, transforms, log)
     _dump(out / "detections.json", detections)
+
+    if stabilize:
+        sizes = ball_size_check(detections, hoop, [Segment(**s) for s in motion["segments"]], mcfg)
+        for row in sizes["segments"]:
+            if row["ratio"] is not None:
+                log(f"  ball / rim width {row['ratio']:.2f} (real ball {sizes['expected']}) in frames "
+                    f"{row['from_i']}-{row['to_i']}, {row['n']} balls near the rim")
+        for w in sizes["warnings"]:
+            log("  WARNING: " + w)
+        motion["ball_size"] = sizes
+        _dump(out / "camera_motion.json", motion)
 
     events = process(detections, hoop, cfg)
     _dump(out / "events.json", events)
@@ -62,11 +74,11 @@ def run(
     return events
 
 
-def _camera_motion(video, hoop: dict, hoop_frame: int, mcfg: MotionConfig, out: Path, log) -> list:
+def _camera_motion(video, hoop: dict, hoop_frame: int, mcfg: MotionConfig, out: Path, log) -> tuple[list, dict]:
     from .stabilize import measure_motion
 
     log("tracking the hoop (camera motion)...")
-    checks, n_frames, fps, every = measure_motion(video, hoop, hoop_frame, mcfg, log)
+    checks, n_frames, fps, every, anchors = measure_motion(video, hoop, hoop_frame, mcfg, log)
     r = HoopFrame.from_dict(hoop).radius_px
     segments = plan_segments(checks, r, mcfg)
     transforms = frame_transforms(segments, n_frames, every, mcfg)
@@ -77,16 +89,18 @@ def _camera_motion(video, hoop: dict, hoop_frame: int, mcfg: MotionConfig, out: 
     if lost:
         log(f"  WARNING: hoop not found in {lost / fps:.0f} s of {n_frames / fps:.0f} s; shots there are not counted. "
             "If that is most of the video, tap the hoop on a later frame (HOOP_AT_S).")
-    _dump(out / "camera_motion.json", {
+    motion = {
         "hoop_frame": hoop_frame,
         "check_every_frames": every,
         "timeline": timeline,
         "segments": [asdict(s) for s in segments],
         "lost": [{"from_i": a, "to_i": b, "from_t": round(a / fps, 3), "to_t": round((b + 1) / fps, 3)}
                  for a, b in lost_spans(transforms)],
+        "anchors": anchors,
         "checks": [asdict(c) for c in checks],
-    })
-    return transforms
+    }
+    _dump(out / "camera_motion.json", motion)
+    return transforms, motion
 
 
 def _dump(path: Path, data: dict) -> None:
