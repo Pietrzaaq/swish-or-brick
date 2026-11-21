@@ -21,3 +21,8 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  # Copies of shared/ files (Flutter only bundles files inside app/).
+  # Refresh with: dart run tool/sync_assets.dart  (test/assets_sync_test.dart checks they match)
+  assets:
+    - assets/shot_logic.v1.json
+    - assets/cases/real_session01_576p/
