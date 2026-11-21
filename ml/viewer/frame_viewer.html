@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Frame viewer</title>
+<!-- BrickOrSwish frame viewer. Open this file in Chrome/Edge (double-click). Everything stays on this computer:
+     no network, no libraries; the video is read locally by the browser. -->
+<style>
+  :root { --bg:#111; --panel:#1c1c1c; --line:#333; --text:#ddd; --dim:#888; --accent:#ff7a2f; --make:#3fb950; --miss:#f85149; --unc:#d29922; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:14px/1.4 system-ui, sans-serif; display:flex; height:100vh; }
+  #main { flex:1; display:flex; flex-direction:column; min-width:0; }
+  #stage { flex:1; overflow:hidden; position:relative; background:#000; cursor:zoom-in; }
+  #stage.zoomed { cursor:grab; }
+  video { position:absolute; left:0; top:0; width:100%; height:100%; object-fit:contain; transform-origin:0 0; }
+  #drop { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; text-align:center; color:var(--dim); padding:24px; }
+  #bar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; padding:8px 12px; background:var(--panel); border-top:1px solid var(--line); }
+  #bar button, #bar select, #bar input { background:#262626; color:var(--text); border:1px solid var(--line); border-radius:6px; padding:5px 9px; font:inherit; }
+  #bar button:hover { border-color:var(--accent); }
+  #pos { font-variant-numeric:tabular-nums; min-width:230px; }
+  #seek { flex:1 1 100%; accent-color:var(--accent); }
+  #side { width:320px; background:var(--panel); border-left:1px solid var(--line); overflow:auto; padding:12px; }
+  h2 { font-size:13px; text-transform:uppercase; letter-spacing:.05em; color:var(--dim); margin:16px 0 6px; }
+  h2:first-child { margin-top:0; }
+  .shot { display:block; width:100%; text-align:left; background:#262626; color:var(--text); border:1px solid var(--line); border-radius:6px; padding:6px 8px; margin:4px 0; cursor:pointer; font:inherit; }
+  .shot:hover { border-color:var(--accent); }
+  .make { color:var(--make); } .miss { color:var(--miss); } .uncertain { color:var(--unc); }
+  pre { white-space:pre-wrap; font-size:12px; color:var(--dim); margin:0; }
+  kbd { background:#262626; border:1px solid var(--line); border-radius:4px; padding:0 4px; font-size:12px; }
+  .help { color:var(--dim); font-size:12px; }
+</style>
+</head>
+<body>
+<div id="main">
+  <div id="stage">
+    <video id="v" preload="auto" playsinline></video>
+    <div id="drop">Drop the results folder's files here: <b>annotated.mp4</b> plus, optionally,
+      events.json, labels.json, detections.json, camera_motion.json.<br>Or use “Open files” below.</div>
+  </div>
+  <div id="bar">
+    <input id="files" type="file" multiple accept=".mp4,.mov,.json,video/*,application/json" hidden>
+    <button id="open">Open files</button>
+    <button id="back10" title="Shift+←">−10</button>
+    <button id="back1" title="←">◀ 1</button>
+    <button id="play" title="Space">▶</button>
+    <button id="fwd1" title="→">1 ▶</button>
+    <button id="fwd10" title="Shift+→">+10</button>
+    <select id="rate" title="playback speed">
+      <option>0.1</option><option>0.25</option><option>0.5</option><option selected>1</option><option>2</option>
+    </select>
+    <label>fps <input id="fps" type="number" step="0.001" value="29.97" style="width:80px"></label>
+    <label>go to <input id="goto" placeholder="frame or 12.5s" style="width:110px"></label>
+    <button id="snap" title="S">Save frame PNG</button>
+    <span id="pos">no video</span>
+    <input id="seek" type="range" min="0" max="0" value="0">
+  </div>
+</div>
+<div id="side">
+  <h2>Shots</h2><div id="shots" class="help">load events.json</div>
+  <h2>Camera</h2><pre id="camera" class="help">load camera_motion.json</pre>
+  <h2>Keys</h2>
+  <div class="help">
+    <kbd>←</kbd>/<kbd>→</kbd> 1 frame · <kbd>Shift</kbd>+arrows 10 frames · <kbd>Space</kbd> play/pause ·
+    <kbd>S</kbd> save frame · click the video to zoom in (2×, 4×, back to 1×), drag to pan when zoomed.
+    Frame numbers match the “frame N” in the annotated video and detections.json.
+  </div>
+</div>
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const v = $("v");
+let fps = 29.97, frame = 0, videoName = "frame", zoom = 1, pan = { x: 0, y: 0 }, labels = null, events = null;
+
+function nFrames() { return v.duration ? Math.floor(v.duration * fps) : 0; }
+function show(f) { // seek to the middle of frame f so the browser lands on exactly that frame
+  f = Math.max(0, Math.min(nFrames() - 1, f));
+  frame = f;
+  v.currentTime = (f + 0.5) / fps;
+  render();
+}
+function render() {
+  const t = frame / fps;
+  $("pos").textContent = `frame ${frame} / ${Math.max(0, nFrames() - 1)}  ·  ${t.toFixed(3)} s`;
+  $("seek").max = Math.max(0, nFrames() - 1);
+  $("seek").value = frame;
+}
+// While playing, read the frame actually on screen.
+function track() {
+  if (!("requestVideoFrameCallback" in v)) return;
+  v.requestVideoFrameCallback((_, meta) => { frame = Math.round(meta.mediaTime * fps); render(); track(); });
+}
+
+function loadFiles(list) {
+  for (const file of list) {
+    if (file.type.startsWith("video/") || /\.(mp4|mov|m4v)$/i.test(file.name)) {
+      v.src = URL.createObjectURL(file);
+      videoName = file.name.replace(/\.[^.]+$/, "");
+      $("drop").style.display = "none";
+    } else if (/\.json$/i.test(file.name)) {
+      file.text().then(txt => useJson(file.name, JSON.parse(txt))).catch(e => alertBox(`${file.name}: ${e.message}`));
+    }
+  }
+}
+function useJson(name, data) {
+  if (data.frames && data.fps) { fps = data.fps; $("fps").value = fps; render(); }      // detections.json
+  if (Array.isArray(data.shots) && /events/.test(name)) { events = data; listShots(); } // events.json
+  if (/labels/.test(name)) { labels = data; listShots(); }                              // labels.json
+  if (data.timeline) {                                                                  // camera_motion.json
+    const extra = (data.ball_size?.warnings || []).map(w => "WARNING: " + w);
+    const anchors = (data.anchors || []).map(a => `template from frame ${a.i} (${a.t} s)`);
+    $("camera").textContent = [...data.timeline, ...anchors, ...extra].join("\n");
+    $("camera").classList.remove("help");
+  }
+}
+function truthFor(n) {
+  // labels.json from eval/score.py: {"truth": "XOO", ...}, one letter per detected shot in order
+  const letter = labels && typeof labels.truth === "string" ? labels.truth[n - 1] : null;
+  return { O: "make", X: "miss", "-": "not a shot" }[letter] || null;
+}
+function listShots() {
+  if (!events) return;
+  const box = $("shots"); box.replaceChildren(); box.classList.remove("help");
+  if (!events.shots.length) box.textContent = "no shots found";
+  // Built from text nodes only: values from JSON files are never interpreted as HTML.
+  const span = (text, cls) => { const e = document.createElement("span"); e.textContent = text; if (cls) e.className = cls; return e; };
+  const known = new Set(["make", "miss", "uncertain"]);
+  for (const s of events.shots) {
+    const b = document.createElement("button");
+    b.className = "shot";
+    const outcome = String(s.outcome), truth = truthFor(s.shot);
+    b.append(`Shot ${Number(s.shot)} · `, span(outcome, known.has(outcome) ? outcome : ""), ` (${String(s.reason)})`);
+    if (truth) b.append(" · you: ", span(truth, known.has(truth) ? truth : ""));
+    b.append(document.createElement("br"),
+      span(`${Number(s.t_start).toFixed(2)}–${Number(s.t_resolve).toFixed(2)} s · click: 1 s before the shot`, "help"));
+    b.onclick = () => { v.pause(); show(Math.round((s.t_start - 1) * fps)); };
+    box.appendChild(b);
+  }
+}
+function alertBox(msg) { $("shots").textContent = msg; }
+
+// Zoom: click cycles 1x -> 2x -> 4x -> 1x around the clicked point; drag pans.
+const stage = $("stage");
+let drag = null, moved = false;
+function applyZoom() {
+  v.style.transform = `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`;
+  stage.classList.toggle("zoomed", zoom > 1);
+}
+stage.addEventListener("mousedown", e => { drag = { x: e.clientX, y: e.clientY, px: pan.x, py: pan.y }; moved = false; });
+window.addEventListener("mousemove", e => {
+  if (!drag || zoom === 1) return;
+  const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+  if (Math.abs(dx) + Math.abs(dy) > 3) moved = true;
+  pan = { x: drag.px + dx, y: drag.py + dy }; applyZoom();
+});
+window.addEventListener("mouseup", e => {
+  if (drag && !moved && v.src) {
+    const r = stage.getBoundingClientRect();
+    const cx = e.clientX - r.left, cy = e.clientY - r.top;
+    const next = zoom === 1 ? 2 : zoom === 2 ? 4 : 1;
+    if (next === 1) pan = { x: 0, y: 0 };
+    else { // keep the clicked point under the cursor
+      const ux = (cx - pan.x) / zoom, uy = (cy - pan.y) / zoom;
+      pan = { x: cx - ux * next, y: cy - uy * next };
+    }
+    zoom = next; applyZoom();
+  }
+  drag = null;
+});
+
+function snap() {
+  if (!v.videoWidth) return;
+  const c = document.createElement("canvas");
+  c.width = v.videoWidth; c.height = v.videoHeight;
+  c.getContext("2d").drawImage(v, 0, 0);
+  const a = document.createElement("a");
+  a.download = `${videoName}_frame${frame}.png`;
+  a.href = c.toDataURL("image/png");
+  a.click();
+}
+function togglePlay() { if (v.paused) { v.play(); track(); } else { v.pause(); show(frame); } }
+
+$("open").onclick = () => $("files").click();
+$("files").onchange = e => loadFiles(e.target.files);
+stage.addEventListener("dragover", e => e.preventDefault());
+stage.addEventListener("drop", e => { e.preventDefault(); loadFiles(e.dataTransfer.files); });
+$("back10").onclick = () => show(frame - 10);
+$("back1").onclick = () => show(frame - 1);
+$("fwd1").onclick = () => show(frame + 1);
+$("fwd10").onclick = () => show(frame + 10);
+$("play").onclick = togglePlay;
+$("snap").onclick = snap;
+$("rate").onchange = e => { v.playbackRate = +e.target.value; };
+$("fps").onchange = e => { fps = +e.target.value || 29.97; render(); };
+$("seek").oninput = e => { v.pause(); show(+e.target.value); };
+$("goto").onkeydown = e => {
+  if (e.key !== "Enter") return;
+  const s = e.target.value.trim();
+  const f = /s$/i.test(s) ? Math.round(parseFloat(s) * fps) : parseInt(s, 10);
+  if (Number.isFinite(f)) { v.pause(); show(f); }
+};
+v.addEventListener("loadedmetadata", () => show(0));
+v.addEventListener("play", () => { $("play").textContent = "❚❚"; });
+v.addEventListener("pause", () => { $("play").textContent = "▶"; });
+window.addEventListener("keydown", e => {
+  if (e.target.tagName === "INPUT" && e.target.type !== "range") return;
+  const step = e.shiftKey ? 10 : 1;
+  if (e.key === "ArrowRight") { e.preventDefault(); v.pause(); show(frame + step); }
+  else if (e.key === "ArrowLeft") { e.preventDefault(); v.pause(); show(frame - step); }
+  else if (e.key === " ") { e.preventDefault(); togglePlay(); }
+  else if (e.key.toLowerCase() === "s") snap();
+});
+</script>
+</body>
+</html>

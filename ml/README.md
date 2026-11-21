@@ -28,6 +28,7 @@ py -m brickorswish.tools.gen_synthetic          # regenerate shared/fixtures/cas
 | `brickorswish/tools/deps_audit.py` | Checks installed packages against OSV.dev (CVEs, advisories, malicious packages) and writes exact pins |
 | `brickorswish/detect/` | Video → `detections.json` (RF-DETR Nano, COCO) → `events.json` + annotated video. Cloud only, except `crop.py` |
 | `notebooks/detect_video.ipynb` | Colab notebook running `brickorswish.detect` on an uploaded video |
+| `viewer/frame_viewer.html` | open in Chrome/Edge: step `annotated.mp4` frame by frame, jump to shots, zoom, save a frame (local only, no libraries) |
 
 ## Real video (Colab, not on this machine)
 
