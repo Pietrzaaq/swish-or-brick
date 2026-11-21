@@ -59,7 +59,8 @@ def annotate_video(
             if not ok:
                 break
             t = float(fr["t"])
-            ball = tracker.step(t, ball_candidates(fr["dets"], hf, cfg))
+            start_conf = cfg.ball_min_conf if machine.idle else cfg.ball_track_min_conf  # as in logic.process()
+            ball = tracker.step(t, ball_candidates(fr["dets"], hf, cfg), start_conf)
             event = machine.step(t, ball)
             if event is not None:
                 counts[event.outcome] += 1

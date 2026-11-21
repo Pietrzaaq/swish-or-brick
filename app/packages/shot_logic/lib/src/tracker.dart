@@ -19,6 +19,11 @@ class BallState {
   final bool observed; // false while coasting on prediction
   final int trackId;
   final int hits;
+
+  /// The detection itself when observed (the prediction while coasting). The filtered x/y assume free
+  /// fall and drift below a ball resting on the rim; rim decisions use these instead.
+  final double mx;
+  final double my;
   const BallState({
     required this.t,
     required this.x,
@@ -28,6 +33,8 @@ class BallState {
     required this.observed,
     required this.trackId,
     required this.hits,
+    required this.mx,
+    required this.my,
   });
 }
 
@@ -43,7 +50,10 @@ class BallTracker {
 
   BallTracker(this.cfg);
 
-  BallState? step(double t, List<Candidate> candidates) {
+  /// Candidates may be weak (>= ballTrackMinConf): any of them can continue the track, but only one with
+  /// >= [startMinConf] (default ballMinConf) can start a new one.
+  BallState? step(double t, List<Candidate> candidates, [double? startMinConf]) {
+    final minConf = startMinConf ?? cfg.ballMinConf;
     final kx = _kx, ky = _ky;
     if (kx != null && ky != null) {
       final dt = t - _lastT;
@@ -61,15 +71,18 @@ class BallTracker {
         ky.update(cand.y, cfg.kalmanMeasVar);
         _misses = 0;
         _hits += 1;
-        return _state(t, observed: true);
+        return _state(t, observed: true, meas: cand);
       }
       _misses += 1;
-      if (_misses <= cfg.maxCoastFrames) return _state(t, observed: false);
+      final fresh = _pickStart(candidates.where((c) => c.conf >= minConf));
+      // The prediction has run away from the ball (rim / net stopped it): start over on the detection.
+      final runaway = fresh != null && _misses > cfg.restartAfterCoastFrames;
+      if (!runaway && _misses <= cfg.maxCoastFrames) return _state(t, observed: false);
       _kx = null;
       _ky = null;
     }
 
-    final start = _pickStart(candidates);
+    final start = _pickStart(candidates.where((c) => c.conf >= minConf));
     if (start == null) return null;
     _trackId += 1;
     _kx = AxisKalman(start.x, cfg.kalmanMeasVar, cfg.kalmanInitVelVar);
@@ -77,7 +90,7 @@ class BallTracker {
     _lastT = t;
     _misses = 0;
     _hits = 1;
-    return _state(t, observed: true);
+    return _state(t, observed: true, meas: start);
   }
 
   /// Best candidate inside the chi-square gate; else the nearest one within
@@ -105,7 +118,7 @@ class BallTracker {
     return null;
   }
 
-  Candidate? _pickStart(List<Candidate> candidates) {
+  Candidate? _pickStart(Iterable<Candidate> candidates) {
     Candidate? best;
     for (final c in candidates) {
       if (c.x.abs() > cfg.watchHalfWidth) continue;
@@ -115,7 +128,7 @@ class BallTracker {
     return best;
   }
 
-  BallState _state(double t, {required bool observed}) => BallState(
+  BallState _state(double t, {required bool observed, Candidate? meas}) => BallState(
         t: t,
         x: _kx!.p,
         y: _ky!.p,
@@ -124,5 +137,7 @@ class BallTracker {
         observed: observed,
         trackId: _trackId,
         hits: _hits,
+        mx: meas?.x ?? _kx!.p,
+        my: meas?.y ?? _ky!.p,
       );
 }

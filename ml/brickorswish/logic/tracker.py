@@ -24,6 +24,10 @@ class BallState:
     observed: bool  # False while coasting on prediction
     track_id: int
     hits: int
+    # The detection itself when observed (the prediction while coasting). The filtered x/y assume free fall
+    # and drift below a ball resting on the rim; rim decisions use these instead.
+    mx: float = 0.0
+    my: float = 0.0
 
 
 class BallTracker:
@@ -36,7 +40,9 @@ class BallTracker:
         self._hits = 0
         self._track_id = 0
 
-    def step(self, t: float, candidates: list[Candidate]) -> BallState | None:
+    def step(self, t: float, candidates: list[Candidate], start_min_conf: float | None = None) -> BallState | None:
+        """Candidates may be weak (>= ball_track_min_conf): any of them can continue the track, but only one
+        with >= start_min_conf (default ball_min_conf) can start a new one."""
         cfg = self.cfg
         if self._kx is not None:
             dt = t - self._last_t
@@ -53,13 +59,18 @@ class BallTracker:
                 self._ky.update(cand.y, cfg.kalman_meas_var)
                 self._misses = 0
                 self._hits += 1
-                return self._state(t, observed=True)
+                return self._state(t, observed=True, meas=cand)
             self._misses += 1
-            if self._misses <= cfg.max_coast_frames:
+            min_conf = cfg.ball_min_conf if start_min_conf is None else start_min_conf
+            fresh = self._pick_start([c for c in candidates if c.conf >= min_conf])
+            # The prediction has run away from the ball (rim / net stopped it): start over on the detection.
+            runaway = fresh is not None and self._misses > cfg.restart_after_coast_frames
+            if not runaway and self._misses <= cfg.max_coast_frames:
                 return self._state(t, observed=False)
             self._kx = self._ky = None
 
-        start = self._pick_start(candidates)
+        min_conf = cfg.ball_min_conf if start_min_conf is None else start_min_conf
+        start = self._pick_start([c for c in candidates if c.conf >= min_conf])
         if start is None:
             return None
         self._track_id += 1
@@ -68,7 +79,7 @@ class BallTracker:
         self._last_t = t
         self._misses = 0
         self._hits = 1
-        return self._state(t, observed=True)
+        return self._state(t, observed=True, meas=start)
 
     def _match(self, candidates: list[Candidate]) -> tuple[Candidate, bool] | None:
         """Best candidate inside the chi-square gate; else the nearest one within
@@ -105,7 +116,7 @@ class BallTracker:
                 best = c
         return best
 
-    def _state(self, t: float, observed: bool) -> BallState:
+    def _state(self, t: float, observed: bool, meas: Candidate | None = None) -> BallState:
         return BallState(
             t=t,
             x=self._kx.p,
@@ -115,4 +126,6 @@ class BallTracker:
             observed=observed,
             track_id=self._track_id,
             hits=self._hits,
+            mx=meas.x if meas is not None else self._kx.p,
+            my=meas.y if meas is not None else self._ky.p,
         )

@@ -93,6 +93,91 @@ class TrackerTest(unittest.TestCase):
         self.assertIsNone(tracker.step(0.0, [Candidate(20.0, 0.0, 0.99)]))
         self.assertTrue(math.isfinite(tracker.step(0.1, [Candidate(0.0, -2.0, 0.5)]).x))
 
+    def test_weak_detection_continues_but_does_not_start(self):
+        cfg = load_cfg()
+        weak = (cfg.ball_track_min_conf + cfg.ball_min_conf) / 2
+        tracker = BallTracker(cfg)
+        self.assertIsNone(tracker.step(0.0, [Candidate(0.0, -5.0, weak)]))  # too weak to start
+        tracker.step(1 / 30, [Candidate(0.0, -5.0, 0.9)])
+        state = tracker.step(2 / 30, [Candidate(0.0, -4.9, weak)])  # ...but continues a track
+        self.assertTrue(state.observed)
+        self.assertEqual((state.mx, state.my), (0.0, -4.9))
+        # while a shot is under way the caller lowers the start threshold
+        self.assertTrue(BallTracker(cfg).step(0.0, [Candidate(0.0, -5.0, weak)], weak).observed)
+
+    def test_restarts_when_the_prediction_runs_away(self):
+        # ball falling fast, then stopped by the net: the detection is far from the free-fall prediction
+        cfg = load_cfg()
+        tracker = BallTracker(cfg)
+        for k in range(4):
+            tracker.step(k / 30, [Candidate(0.0, -3.0 + k * 0.9, 0.9)])
+        hidden = cfg.restart_after_coast_frames + 2
+        for k in range(hidden):
+            state = tracker.step((4 + k) / 30, [])
+            self.assertFalse(state.observed)
+        self.assertGreater(state.y - 0.5, cfg.reacquire_radius)  # the prediction is already far below
+        state = tracker.step((4 + hidden) / 30, [Candidate(-0.4, 0.5, 0.4)])
+        self.assertTrue(state.observed)
+        self.assertEqual(state.track_id, 2)
+        self.assertEqual((state.mx, state.my), (-0.4, 0.5))
+
+
+class StateMachineTest(unittest.TestCase):
+    """Rim decisions come from measured positions only."""
+
+    @staticmethod
+    def _ball(t, x, y, vy=10.0, observed=True, fx=None, fy=None):
+        from brickorswish.logic.tracker import BallState
+
+        return BallState(t, x if fx is None else fx, y if fy is None else fy, 0.0, vy, observed, 1, 9, x, y)
+
+    def _approach(self, sm):
+        sm.step(0.0, self._ball(0.0, 0.0, -5.0))
+        self.assertEqual(sm.state, "approach")
+
+    def test_prediction_never_crosses_the_rim(self):
+        from brickorswish.logic.state_machine import ShotStateMachine
+
+        sm = ShotStateMachine(load_cfg())
+        self._approach(sm)
+        sm.step(0.1, self._ball(0.1, 0.0, -0.5))
+        sm.step(0.13, self._ball(0.13, 0.0, 1.0, observed=False))  # predicted below the rim
+        self.assertEqual(sm.state, "approach")
+
+    def test_ball_resting_on_rim_is_not_a_crossing_even_if_the_filter_sinks(self):
+        from brickorswish.logic.state_machine import ShotStateMachine
+
+        sm = ShotStateMachine(load_cfg())
+        self._approach(sm)
+        sm.step(0.1, self._ball(0.1, 1.0, -0.4, vy=-1.0))  # bounced up onto the rim
+        self.assertEqual(sm.state, "rattle")
+        sm.step(0.13, self._ball(0.13, 0.9, -0.35, fy=0.05))  # filter thinks it is below; detection says above
+        self.assertEqual(sm.state, "rattle")
+
+    def test_crossing_bridges_a_hidden_stretch_from_sightings(self):
+        from brickorswish.logic.state_machine import ShotStateMachine
+
+        cfg = load_cfg()
+        sm = ShotStateMachine(cfg)
+        self._approach(sm)
+        sm.step(0.1, self._ball(0.1, 0.24, -0.83))
+        gap = cfg.cross_max_gap_s / 2
+        sm.step(0.1 + gap, self._ball(0.1 + gap, -0.40, 1.25))  # next sighting is already in the net
+        self.assertEqual(sm.state, "pending_make")
+        ev = sm.step(0.15 + gap, self._ball(0.15 + gap, -0.77, 1.82))
+        self.assertEqual((ev.outcome, ev.reason), ("make", "through_rim"))
+
+    def test_down_at_the_rim_edge_is_a_miss(self):
+        from brickorswish.logic.state_machine import ShotStateMachine
+
+        sm = ShotStateMachine(load_cfg())
+        self._approach(sm)
+        sm.step(0.1, self._ball(0.1, 1.0, -0.25))
+        sm.step(0.13, self._ball(0.13, 0.36, 1.03))  # crossed at x ~ 0.87: over the edge
+        self.assertEqual(sm.state, "rattle")
+        ev = sm.step(0.2, self._ball(0.2, -0.1, 1.99))
+        self.assertEqual((ev.outcome, ev.reason), ("miss", "rim_out"))
+
 
 if __name__ == "__main__":
     unittest.main()

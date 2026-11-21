@@ -1,0 +1,48 @@
+{
+ "shots": [
+  {
+   "shot": 1,
+   "outcome": "miss"
+  },
+  {
+   "shot": 2,
+   "outcome": "make"
+  },
+  {
+   "shot": 3,
+   "outcome": "make"
+  },
+  {
+   "shot": 4,
+   "outcome": "make"
+  },
+  {
+   "shot": 5,
+   "outcome": "make"
+  },
+  {
+   "shot": 6,
+   "outcome": "make"
+  },
+  {
+   "shot": 7,
+   "outcome": "make"
+  },
+  {
+   "shot": 8,
+   "outcome": "miss"
+  },
+  {
+   "shot": 9,
+   "outcome": "miss"
+  },
+  {
+   "shot": 10,
+   "outcome": "make"
+  },
+  {
+   "shot": 11,
+   "outcome": "make"
+  }
+ ]
+}

@@ -22,6 +22,11 @@ const replayCases = [
     title: 'Real session 1',
     subtitle: '76 s phone video (576p), detected by RF-DETR Nano in Colab',
   ),
+  ReplayCase(
+    id: 'real_session02_720p',
+    title: 'Real session 2',
+    subtitle: '161 s (720p), 11 shots, camera moved during setup',
+  ),
 ];
 
 class ReplayShot {

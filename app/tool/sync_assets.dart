@@ -6,7 +6,7 @@
 import 'dart:io';
 
 /// Must list every ReplayCase.id in lib/replay/replay_data.dart.
-const cases = ['real_session01_576p'];
+const cases = ['real_session01_576p', 'real_session02_720p'];
 const caseFiles = ['detections.json', 'hoop.json', 'expected_events.json'];
 
 void main() {

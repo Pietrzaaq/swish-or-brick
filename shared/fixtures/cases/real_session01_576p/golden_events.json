@@ -5,7 +5,7 @@
    "outcome": "miss",
    "t_start": 3.8684,
    "t_resolve": 4.5354,
-   "reason": "rim_out"
+   "reason": "left_zone"
   },
   {
    "shot": 2,
@@ -18,35 +18,35 @@
    "shot": 3,
    "outcome": "make",
    "t_start": 29.08,
-   "t_resolve": 29.5802,
+   "t_resolve": 29.5135,
    "reason": "through_rim"
   },
   {
    "shot": 4,
    "outcome": "make",
    "t_start": 38.9512,
-   "t_resolve": 39.5181,
+   "t_resolve": 39.4181,
    "reason": "through_rim"
   },
   {
    "shot": 5,
    "outcome": "make",
    "t_start": 48.7557,
-   "t_resolve": 49.1558,
+   "t_resolve": 49.1892,
    "reason": "through_rim"
   },
   {
    "shot": 6,
    "outcome": "make",
    "t_start": 59.794,
-   "t_resolve": 61.1947,
+   "t_resolve": 61.0946,
    "reason": "through_rim"
   },
   {
    "shot": 7,
    "outcome": "make",
    "t_start": 70.2989,
-   "t_resolve": 71.2993,
+   "t_resolve": 71.266,
    "reason": "through_rim"
   }
  ]

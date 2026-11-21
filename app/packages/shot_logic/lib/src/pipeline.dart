@@ -8,7 +8,7 @@ List<Candidate> ballCandidates(List<dynamic> dets, HoopFrame hoop, ShotLogicConf
   for (final raw in dets) {
     final d = raw as Map<String, dynamic>;
     final conf = (d['conf'] as num).toDouble();
-    if (d['cls'] != 'ball' || conf < cfg.ballMinConf) continue;
+    if (d['cls'] != 'ball' || conf < cfg.ballTrackMinConf) continue;
     final size = hoop.sizeInRimDiameters((d['w'] as num).toDouble(), (d['h'] as num).toDouble());
     if (!(cfg.ballMinSizeRimD <= size && size <= cfg.ballMaxSizeRimD)) continue;
     final (x, y) = hoop.toHoop((d['x'] as num).toDouble(), (d['y'] as num).toDouble());
@@ -36,7 +36,9 @@ Map<String, dynamic> process(
       throw FormatException('frame times must increase strictly (frame ${fr['i']})');
     }
     lastT = t;
-    final ball = tracker.step(t, ballCandidates(fr['dets'] as List, frame, cfg));
+    // While a shot is under way a weak detection may (re)start the track; otherwise only a confident one.
+    final startConf = machine.idle ? cfg.ballMinConf : cfg.ballTrackMinConf;
+    final ball = tracker.step(t, ballCandidates(fr['dets'] as List, frame, cfg), startConf);
     final event = machine.step(t, ball);
     if (event != null) shots.add(event.toJson());
   }

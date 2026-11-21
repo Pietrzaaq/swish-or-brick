@@ -9,8 +9,10 @@ from pathlib import Path
 class ShotLogicConfig:
     version: int
 
-    # Candidate filtering
+    # Candidate filtering. A track starts only on ball_min_conf; once a shot is under way, detections down to
+    # ball_track_min_conf are used too (the ball fades to 15-30% confidence where it overlaps rim, net, board).
     ball_min_conf: float
+    ball_track_min_conf: float
     ball_min_size_rim_d: float
     ball_max_size_rim_d: float
 
@@ -22,6 +24,9 @@ class ShotLogicConfig:
     gate_chi2: float
     reacquire_radius: float
     max_coast_frames: int
+    # After this many frames without a sighting, a credible detection outside the gate restarts the track
+    # (the free-fall prediction has run away from a ball the rim or net stopped).
+    restart_after_coast_frames: int
     min_hits: int
 
     # Region where a new track may start
@@ -39,6 +44,9 @@ class ShotLogicConfig:
     near_rim_height: float
     net_exit_max_abs_x: float
     make_confirm_depth: float
+    # Rim crossings are judged between the last ball SEEN above the rim plane and the first one seen below it,
+    # never from predictions; if those two sightings are further apart than this, the crossing is not judged.
+    cross_max_gap_s: float
 
     # Timing
     rattle_timeout_s: float

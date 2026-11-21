@@ -2,6 +2,7 @@
   "version": 1,
 
   "ball_min_conf": 0.3,
+  "ball_track_min_conf": 0.15,
   "ball_min_size_rim_d": 0.3,
   "ball_max_size_rim_d": 0.9,
 
@@ -12,6 +13,7 @@
   "gate_chi2": 9.21,
   "reacquire_radius": 2.0,
   "max_coast_frames": 6,
+  "restart_after_coast_frames": 2,
   "min_hits": 2,
 
   "watch_half_width": 6.0,
@@ -26,9 +28,10 @@
   "near_rim_height": 1.5,
   "net_exit_max_abs_x": 1.0,
   "make_confirm_depth": 1.5,
+  "cross_max_gap_s": 0.6,
 
   "rattle_timeout_s": 2.0,
-  "lost_timeout_s": 0.4,
+  "lost_timeout_s": 0.6,
   "pending_make_lost_timeout_s": 0.8,
   "debounce_s": 1.0
 }

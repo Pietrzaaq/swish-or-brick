@@ -1,0 +1,81 @@
+{
+ "shots": [
+  {
+   "shot": 1,
+   "outcome": "miss",
+   "t_start": 34.9622,
+   "t_resolve": 35.6962,
+   "reason": "left_zone"
+  },
+  {
+   "shot": 2,
+   "outcome": "make",
+   "t_start": 48.5401,
+   "t_resolve": 49.4742,
+   "reason": "through_rim"
+  },
+  {
+   "shot": 3,
+   "outcome": "make",
+   "t_start": 60.1497,
+   "t_resolve": 60.7502,
+   "reason": "through_rim"
+  },
+  {
+   "shot": 4,
+   "outcome": "make",
+   "t_start": 70.0579,
+   "t_resolve": 70.625,
+   "reason": "through_rim"
+  },
+  {
+   "shot": 5,
+   "outcome": "make",
+   "t_start": 79.8326,
+   "t_resolve": 80.3998,
+   "reason": "through_rim"
+  },
+  {
+   "shot": 6,
+   "outcome": "make",
+   "t_start": 90.9085,
+   "t_resolve": 92.343,
+   "reason": "through_rim"
+  },
+  {
+   "shot": 7,
+   "outcome": "make",
+   "t_start": 101.4171,
+   "t_resolve": 102.3846,
+   "reason": "through_rim"
+  },
+  {
+   "shot": 8,
+   "outcome": "miss",
+   "t_start": 114.8282,
+   "t_resolve": 115.9291,
+   "reason": "rim_out"
+  },
+  {
+   "shot": 9,
+   "outcome": "miss",
+   "t_start": 124.1359,
+   "t_resolve": 125.2368,
+   "reason": "rim_out"
+  },
+  {
+   "shot": 10,
+   "outcome": "make",
+   "t_start": 138.0141,
+   "t_resolve": 138.5145,
+   "reason": "through_rim"
+  },
+  {
+   "shot": 11,
+   "outcome": "make",
+   "t_start": 144.1525,
+   "t_resolve": 145.0866,
+   "reason": "through_rim"
+  }
+ ]
+}
