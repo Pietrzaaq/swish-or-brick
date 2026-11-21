@@ -7,7 +7,6 @@ environment:
   sdk: ^3.14.0
 
 dependencies:
-  camera: ^0.12.2
   flutter:
     sdk: flutter
   material_ui: ^1.1.0
@@ -26,3 +25,4 @@ flutter:
   assets:
     - assets/shot_logic.v1.json
     - assets/cases/real_session01_576p/
+    - assets/cases/real_session02_720p/
