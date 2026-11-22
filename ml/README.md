@@ -26,7 +26,10 @@ py -m brickorswish.tools.gen_synthetic          # regenerate shared/fixtures/cas
 | `brickorswish/eval/score.py` | Your verdict per detected shot (O/X/-) → accuracy vs the Milestone 1 targets (`labels.json`, `score.json`) |
 | `brickorswish/tools/make_fixture.py` | Colab results folder + verdict → `shared/fixtures/cases/real_*` (only if the logic gets every shot right) |
 | `brickorswish/tools/deps_audit.py` | Checks installed packages against OSV.dev (CVEs, advisories, malicious packages) and writes exact pins |
-| `brickorswish/detect/` | Video → `detections.json` (RF-DETR Nano, COCO) → `events.json` + annotated video. Cloud only, except `crop.py` |
+| `brickorswish/detect/` | Video → `detections.json` (RF-DETR Nano, COCO) → `events.json` + annotated video |
+| `brickorswish/detect/onnx_model.py` | The same RF-DETR network exported to ONNX, run with onnxruntime: local detection without PyTorch |
+| `brickorswish/detect/export_onnx.py` | Colab: export RF-DETR → `model.onnx` + `model.json`, compare its boxes with RF-DETR's, check it runs with only the 3 local packages |
+| `requirements-local.txt` | The only packages for local detection: onnxruntime, numpy, opencv-python-headless (exact files, checksums) |
 | `notebooks/detect_video.ipynb` | Colab notebook running `brickorswish.detect` on an uploaded video |
 | `viewer/frame_viewer.html` | open in Chrome/Edge: step `annotated.mp4` frame by frame, jump to shots, zoom, save a frame (local only, no libraries) |
 
@@ -46,3 +49,12 @@ After a run, type your verdict in the notebook's verdict cell (or locally:
 `py -m brickorswish.tools.make_fixture results/<id> real_<name>`.
 
 Thresholds live in `../shared/config/shot_logic.v1.json`; units are explained in `../shared/README.md`.
+
+## Local detection (no Colab)
+
+1. In Colab, run the notebook's export cell once (`EXPORT_ONNX = True`). Put `model.onnx` + `model.json` in
+   `ml/models/rfdetr-nano-coco/` (git-ignored).
+2. Once, in `ml/`: `py -3.14 -m venv .venv`, then
+   `.venv\Scripts\python -m pip install --no-deps --only-binary=:all: --require-hashes -r requirements-local.txt`
+3. Per video:
+   `.venv\Scripts\python -m brickorswish.detect.run_video VIDEO --hoop hoop.json --out results\NAME --onnx models\rfdetr-nano-coco\model.onnx --hoop-frame N`

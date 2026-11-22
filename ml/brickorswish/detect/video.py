@@ -1,6 +1,7 @@
-"""Runs COCO-pretrained RF-DETR Nano over a video and returns detections in shared/schema/detections.schema.json.
+"""Runs RF-DETR Nano over a video and returns detections in shared/schema/detections.schema.json.
 
-Needs `opencv-python` and `rfdetr` (PyTorch). Cloud only; see ml/notebooks/detect_video.ipynb.
+The model is either rfdetr itself (PyTorch; Colab, see ml/notebooks/detect_video.ipynb) or the same network
+exported to ONNX (onnx_model.OnnxDetector; runs locally with onnxruntime + numpy + opencv-python-headless).
 """
 
 import time
@@ -12,11 +13,50 @@ from .crop import box_to_det, frame_time, watch_crop
 from .motion import IDENTITY, Transform, rim_centre, shift_hoop, stabilize_dets
 
 
-def load_model():
-    """COCO-pretrained RF-DETR Nano. Downloads the weights on first use."""
+def load_model(onnx_path: str | Path | None = None):
+    """RF-DETR Nano: the exported ONNX model at `onnx_path` (checked against its model.json card), or else
+    COCO-pretrained rfdetr (PyTorch; downloads the weights on first use)."""
+    if onnx_path is not None:
+        from .onnx_model import OnnxDetector
+
+        return OnnxDetector(onnx_path)
     from rfdetr import RFDETRNano
 
     return RFDETRNano()
+
+
+def predict_boxes(model, images, threshold: float) -> list[list[tuple[str, float, tuple]]]:
+    """(class name, confidence, xyxy in image pixels) per box, per image, from either kind of model."""
+    from .onnx_model import Box
+
+    results = (model.predict(images, threshold) if hasattr(model, "card")
+               else model.predict(images, threshold=threshold, include_source_image=False))
+    if not isinstance(results, list):
+        results = [results]
+    out = []
+    for dets in results:
+        if isinstance(dets, list) and (not dets or isinstance(dets[0], Box)):
+            out.append([(b.cls, b.conf, b.xyxy) for b in dets])
+            continue
+        names = dets.data.get("class_name") if dets.data else None
+        if names is None:
+            from rfdetr.assets.coco_classes import COCO_CLASSES
+
+            names = [COCO_CLASSES.get(int(c), str(int(c))) for c in dets.class_id]
+        out.append([(str(n), float(c), tuple(float(v) for v in xyxy))
+                    for xyxy, c, n in zip(dets.xyxy, dets.confidence, names)])
+    return out
+
+
+def model_label(model) -> str:
+    if hasattr(model, "card"):
+        return f"onnx {model.label}"
+    try:
+        from importlib.metadata import version
+
+        return f"rfdetr {version('rfdetr')} nano coco"
+    except Exception:  # noqa: BLE001 - informational only
+        return "rfdetr ? nano coco"
 
 
 def read_frame(video_path: str | Path, index: int = 0):
@@ -73,7 +113,7 @@ def detect_video(
     size_checked = False
 
     def flush():
-        results = model.predict([img for _, img, _, _ in pending], threshold=threshold, include_source_image=False)
+        results = predict_boxes(model, [img for _, img, _, _ in pending], threshold)
         for (i, _, box, tr), dets in zip(pending, results):
             frames[i] = {"i": i, "t": frame_time(i, fps), "dets": stabilize_dets(_to_dets(dets, box[:2]), c0, tr)}
         pending.clear()
@@ -112,24 +152,13 @@ def detect_video(
     if not frames:
         raise ValueError(f"no frames decoded from {video_path}")
 
-    try:
-        from importlib.metadata import version
-
-        rf_version = version("rfdetr")
-    except Exception:  # noqa: BLE001 - informational only
-        rf_version = "?"
     moving = "stabilized" if transforms is not None else "still camera"
-    source = f"{Path(video_path).name} | rfdetr {rf_version} nano coco | crop={crop} | thr={threshold} | {moving}"
+    source = f"{Path(video_path).name} | {model_label(model)} | crop={crop} | thr={threshold} | {moving}"
     return {"fps": round(fps, 3), "source": source, "frames": [frames[k] for k in sorted(frames)]}
 
 
-def _to_dets(dets, offset: tuple[int, int]) -> list[dict]:
-    """supervision.Detections -> list of detections.json entries in full-frame pixels."""
-    names = dets.data.get("class_name") if dets.data else None
-    if names is None:
-        from rfdetr.assets.coco_classes import COCO_CLASSES
-
-        names = [COCO_CLASSES.get(int(c), str(int(c))) for c in dets.class_id]
-    out = [box_to_det(str(n), c, xyxy, offset) for xyxy, c, n in zip(dets.xyxy, dets.confidence, names)]
+def _to_dets(boxes, offset: tuple[int, int]) -> list[dict]:
+    """[(class name, confidence, xyxy in crop pixels)] -> detections.json entries in full-frame pixels."""
+    out = [box_to_det(n, c, xyxy, offset) for n, c, xyxy in boxes]
     out.sort(key=lambda d: (d["cls"] != "ball", -d["conf"]))
     return out

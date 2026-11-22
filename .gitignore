@@ -10,3 +10,6 @@ __pycache__/
 
 # Personal to-do list
 /TODO.md
+
+# Exported detector models (100+ MB): Drive / Colab output, never committed
+/ml/models/

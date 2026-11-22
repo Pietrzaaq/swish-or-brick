@@ -1,0 +1,16 @@
+# Local detection on Windows (Python 3.14): onnxruntime + numpy + headless OpenCV and nothing else.
+# Each version: newest release that is >= 2 weeks old with 0 known vulnerabilities (OSV.dev, 2026-11-22).
+# Install into ml/.venv with (only these files, checksums enforced, no install-time code):
+#   python -m pip install --no-deps --only-binary=:all: --require-hashes -r requirements-local.txt
+onnxruntime==1.31.1 \
+    --hash=sha256:0a3998e18cb667ef54287556bd62291a788ed235723dd90c83b2294b24e71d81
+numpy==2.5.4 \
+    --hash=sha256:2ca144f15135b6212a5c47b1e2aeca6e412f102f95a2d5d88d8aec77eb255de3
+opencv-python-headless==4.14.0.94 \
+    --hash=sha256:cbed65415b8f6a9541c705afe3e64795840524d0ff3bc58f507826284a1dc64b
+
+# onnxruntime declares these too, but running a model does not need them (protobuf / flatbuffers: its
+# model-conversion tools). Not installed. If a test ever proves otherwise, add the line back:
+#   packaging==26.3        --hash=sha256:d7193f7c8e4e93f444fde0262bf90af30e16fa0ad0ad44cb553c87339b23cd1c
+#   protobuf==7.36.2       --hash=sha256:a300819d441e078a5608c0d3c709796bb548136058fda017ae51d425b44fd353
+#   flatbuffers==25.12.19  --hash=sha256:7634f50c427838bb021c2d66a3d1168e9d199b0607e6329399f04846d42e20b4

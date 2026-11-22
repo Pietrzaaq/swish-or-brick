@@ -6,7 +6,8 @@ hoop.json holds your taps on frame N (--hoop-frame). The camera may move afterwa
 re-found every 0.5 s (stabilize.py), detections are mapped back to frame N's pixels, and spans where
 the hoop cannot be found are not counted. --no-stabilize assumes a still camera.
 
-Needs `opencv-python` and `rfdetr`. Cloud only (Colab); see ml/notebooks/detect_video.ipynb.
+With --onnx model.onnx it runs the exported model locally (ml/requirements-local.txt: onnxruntime, numpy,
+opencv-python-headless); without it, rfdetr itself (PyTorch, Colab: ml/notebooks/detect_video.ipynb).
 """
 
 import argparse
@@ -24,6 +25,7 @@ def run(
     hoop: dict,
     out_dir: str | Path,
     model=None,
+    onnx: str | Path | None = None,
     crop: str = "hoop",
     threshold: float = 0.15,
     batch_size: int = 8,
@@ -47,7 +49,7 @@ def run(
         transforms, motion = _camera_motion(video, hoop, hoop_frame, mcfg, out, log)
 
     log("detecting...")
-    detections = detect_video(video, hoop, cfg, model or load_model(), crop, threshold, batch_size, transforms, log)
+    detections = detect_video(video, hoop, cfg, model or load_model(onnx), crop, threshold, batch_size, transforms, log)
     _dump(out / "detections.json", detections)
 
     if stabilize:
@@ -114,6 +116,7 @@ def main() -> None:
     ap.add_argument("video")
     ap.add_argument("--hoop", required=True, help="hoop.json (3-click calibration)")
     ap.add_argument("--out", required=True, help="output folder")
+    ap.add_argument("--onnx", help="exported model (model.onnx + model.json card); default: rfdetr (PyTorch)")
     ap.add_argument("--crop", choices=["hoop", "full"], default="hoop")
     ap.add_argument("--threshold", type=float, default=0.15)
     ap.add_argument("--batch", type=int, default=8)
@@ -123,7 +126,7 @@ def main() -> None:
     args = ap.parse_args()
     with open(args.hoop, encoding="utf-8") as fh:
         hoop = json.load(fh)
-    run(args.video, hoop, args.out, crop=args.crop, threshold=args.threshold, batch_size=args.batch,
+    run(args.video, hoop, args.out, onnx=args.onnx, crop=args.crop, threshold=args.threshold, batch_size=args.batch,
         annotate=not args.no_video, hoop_frame=args.hoop_frame, stabilize=not args.no_stabilize)
 
 
