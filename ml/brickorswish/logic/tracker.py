@@ -31,8 +31,10 @@ class BallState:
 
 
 class BallTracker:
-    def __init__(self, cfg: ShotLogicConfig):
+    def __init__(self, cfg: ShotLogicConfig, gravity: float | None = None):
+        """gravity: rim radii / s^2 along hoop-frame y (pipeline.prepare() measures it); default from config."""
         self.cfg = cfg
+        self.gravity = cfg.gravity_rim_r_per_s2 if gravity is None else gravity
         self._kx: AxisKalman | None = None
         self._ky: AxisKalman | None = None
         self._last_t = 0.0
@@ -48,7 +50,7 @@ class BallTracker:
             dt = t - self._last_t
             self._last_t = t
             self._kx.predict(dt, 0.0, cfg.kalman_accel_noise)
-            self._ky.predict(dt, cfg.gravity_rim_r_per_s2, cfg.kalman_accel_noise)
+            self._ky.predict(dt, self.gravity, cfg.kalman_accel_noise)
             match = self._match(candidates)
             if match is not None:
                 cand, manoeuvre = match

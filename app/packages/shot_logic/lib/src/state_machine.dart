@@ -129,10 +129,11 @@ class ShotStateMachine {
       _enter(ShotPhase.rattle, t);
       return null;
     }
+    if (ball.my >= cfg.makeConfirmDepth) return _resolve(t, 'make', 'through_rim');
+    // Beside the rim at rim level. Deeper down, a ball leaving the net keeps its sideways speed.
     if (ball.my > 0.0 && ball.mx.abs() > cfg.netExitMaxAbsX) {
       return _resolve(t, 'miss', 'rolled_out');
     }
-    if (ball.my >= cfg.makeConfirmDepth) return _resolve(t, 'make', 'through_rim');
     return null;
   }
 

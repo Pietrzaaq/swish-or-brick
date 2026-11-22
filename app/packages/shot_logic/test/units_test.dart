@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:shot_logic/shot_logic.dart';
 import 'package:test/test.dart';
@@ -30,11 +31,13 @@ void main() {
       expect(hoop.toHoop(960, 340), (0.0, -1.0));
       expect(hoop.ellipseB, closeTo(0.25, 1e-12));
     });
-    test('tilted roundtrip', () {
+    test('tilted rim does not tilt the axes', () {
+      // the clicked rim is tilted (perspective / phone roll), but "down" stays the image vertical
       final hoop = HoopFrame([100, 200], [180, 260], [130, 245]);
-      final (x, y) = hoop.toHoop(180, 260);
-      expect(x, closeTo(1.0, 1e-12));
-      expect(y, closeTo(0.0, 1e-12));
+      expect(hoop.radiusPx, 50.0);
+      final (x, y) = hoop.toHoop(140, 330); // straight below the rim centre (140, 230)
+      expect(x, closeTo(0.0, 1e-12));
+      expect(y, closeTo(2.0, 1e-12));
       for (final (px, py) in [(0.0, 0.0), (512.5, -33.0), (140.0, 230.0)]) {
         final (hx, hy) = hoop.toHoop(px, py);
         final (bx, by) = hoop.toPixels(hx, hy);
@@ -42,8 +45,70 @@ void main() {
         expect(by, closeTo(py, 1e-9));
       }
     });
+    test('measured down sets the axes', () {
+      final a = 10.0 * math.pi / 180.0;
+      final down = (-math.sin(a), math.cos(a));
+      final hoop = HoopFrame([900, 400], [1020, 400], [960, 415], down);
+      final (x, y) = hoop.toHoop(960 + 120 * down.$1, 400 + 120 * down.$2);
+      expect(x, closeTo(0.0, 1e-12));
+      expect(y, closeTo(2.0, 1e-12));
+      expect(hoop.ellipseB, closeTo(0.25, 1e-12)); // the drawn rim does not depend on gravity
+    });
     test('degenerate calibration', () {
       expect(() => HoopFrame([1, 1], [1, 1], [1, 2]), throwsArgumentError);
+    });
+  });
+
+  group('gravity', () {
+    const hoop = {
+      'image_width': 1920, 'image_height': 1080, //
+      'left': [900, 400], 'right': [1020, 400], 'front': [960, 415],
+    };
+    Map<String, dynamic> flights((double, double) down, double g, {double conf = 0.9}) {
+      const r = 60.0, fps = 30.0;
+      final frames = <Map<String, dynamic>>[];
+      var t = 0.0;
+      for (var k = 0; k < 4; k++) {
+        final x0 = -4.0 + k, y0 = -9.0, vx = 4.0, vy = -6.0 + k;
+        for (var i = 0; i < 20; i++) {
+          final s = i / fps;
+          final x = x0 + vx * s + 0.5 * g * down.$1 * s * s;
+          final y = y0 + vy * s + 0.5 * g * down.$2 * s * s;
+          frames.add({
+            'i': frames.length, 't': t,
+            'dets': [{'cls': 'ball', 'conf': conf, 'x': 960 + x * r, 'y': 400 + y * r, 'w': 63.0, 'h': 63.0}],
+          });
+          t += 1.0 / fps;
+        }
+        frames.add({'i': frames.length, 't': t, 'dets': []});
+        t += 1.0 / fps;
+      }
+      return {'fps': fps, 'frames': frames};
+    }
+
+    test('fit is exact on a parabola', () {
+      final ts = [for (var i = 0; i < 10; i++) i / 30];
+      final (acc, rms) = fitAccel(ts, [for (final t in ts) 3.0 - 2.0 * t + 0.5 * 28.0 * t * t]);
+      expect(acc, closeTo(28.0, 1e-6));
+      expect(rms, lessThan(1e-9));
+    });
+    test('recovers tilted gravity from flights', () {
+      final cfg = ShotLogicConfig.fromJson(rawConfig());
+      final a = 8.0 * math.pi / 180.0;
+      final down = (-math.sin(a), math.cos(a));
+      final ((gx, gy), g) = estimateGravity(flights(down, 30.0), hoop, cfg)!;
+      expect(gx, closeTo(down.$1, 1e-6));
+      expect(gy, closeTo(down.$2, 1e-6));
+      expect(g, closeTo(30.0, 1e-4));
+    });
+    test('falls back without clean flights', () {
+      final cfg = ShotLogicConfig.fromJson(rawConfig());
+      final weak = flights((0.0, 1.0), 30.0, conf: cfg.gravityFitMinConf / 2);
+      expect(estimateGravity(weak, hoop, cfg), isNull);
+      final (frame, gravity) = prepare(weak, hoop, cfg);
+      expect(frame.down, (0.0, 1.0));
+      expect(gravity, cfg.gravityRimRPerS2);
+      expect(estimateGravity(flights((1.0, 0.0), 30.0), hoop, cfg), isNull);
     });
   });
 

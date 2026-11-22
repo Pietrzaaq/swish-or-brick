@@ -7,7 +7,13 @@ class ShotLogicConfig {
   final double ballMinSizeRimD;
   final double ballMaxSizeRimD;
 
+  /// Fallback only: process() measures gravity (direction and strength) from the ball's free flights.
   final double gravityRimRPerS2;
+  final int gravityFitWindow;
+  final double gravityFitMinConf;
+  final double gravityFitMaxRms;
+  final int gravityFitMinWindows;
+  final double gravityMaxTiltDeg;
   final double kalmanAccelNoise;
   final double kalmanMeasVar;
   final double kalmanInitVelVar;
@@ -36,10 +42,14 @@ class ShotLogicConfig {
   final double pendingMakeLostTimeoutS;
   final double debounceS;
 
-  static const _intKeys = {'version', 'max_coast_frames', 'restart_after_coast_frames', 'min_hits'};
+  static const _intKeys = {
+    'version', 'max_coast_frames', 'restart_after_coast_frames', 'min_hits', //
+    'gravity_fit_window', 'gravity_fit_min_windows',
+  };
   static const _doubleKeys = {
     'ball_min_conf', 'ball_track_min_conf', 'ball_min_size_rim_d', 'ball_max_size_rim_d', //
-    'gravity_rim_r_per_s2', 'kalman_accel_noise', 'kalman_meas_var',
+    'gravity_rim_r_per_s2', 'gravity_fit_min_conf', 'gravity_fit_max_rms', 'gravity_max_tilt_deg',
+    'kalman_accel_noise', 'kalman_meas_var',
     'kalman_init_vel_var', 'gate_chi2', 'reacquire_radius', //
     'watch_half_width', 'watch_top', 'watch_bottom', //
     'approach_half_width', 'approach_height', //
@@ -56,6 +66,11 @@ class ShotLogicConfig {
         ballMinSizeRimD = _d(m, 'ball_min_size_rim_d'),
         ballMaxSizeRimD = _d(m, 'ball_max_size_rim_d'),
         gravityRimRPerS2 = _d(m, 'gravity_rim_r_per_s2'),
+        gravityFitWindow = (m['gravity_fit_window'] as num).toInt(),
+        gravityFitMinConf = _d(m, 'gravity_fit_min_conf'),
+        gravityFitMaxRms = _d(m, 'gravity_fit_max_rms'),
+        gravityFitMinWindows = (m['gravity_fit_min_windows'] as num).toInt(),
+        gravityMaxTiltDeg = _d(m, 'gravity_max_tilt_deg'),
         kalmanAccelNoise = _d(m, 'kalman_accel_noise'),
         kalmanMeasVar = _d(m, 'kalman_meas_var'),
         kalmanInitVelVar = _d(m, 'kalman_init_vel_var'),

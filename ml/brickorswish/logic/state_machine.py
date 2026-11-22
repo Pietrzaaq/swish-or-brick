@@ -4,9 +4,9 @@ IDLE -> APPROACH        ball in approach zone moving down
 APPROACH -> PENDING_MAKE  crosses rim plane (y=0) downward with |x| <= make_max_abs_x
          -> RATTLE        crosses near the rim edge, or reverses upward near the rim
          -> MISS          crosses wide, or leaves the zone sideways
-PENDING_MAKE -> MAKE      seen below make_confirm_depth, still inside net_exit_max_abs_x
+PENDING_MAKE -> MAKE      seen below make_confirm_depth (it may already be leaving the net sideways)
              -> RATTLE    pops back up
-             -> MISS      rolls out sideways below the rim plane
+             -> MISS      beside the rim (|x| > net_exit_max_abs_x) while still above make_confirm_depth
 RATTLE -> PENDING_MAKE    comes back down through the rim
        -> MISS            comes down outside, leaves the zone, or is seen deep below the rim after
                           crossing it at the edge (it went down outside the make zone)
@@ -17,7 +17,12 @@ any active -> UNCERTAIN   ball not observed for lost_timeout_s (pending_make_los
 Only SEEN balls decide anything. A rim crossing is placed by interpolating between the last ball seen
 above the rim plane and the first one seen below it (at most cross_max_gap_s apart, across track restarts):
 the detector loses the ball exactly where it overlaps rim and net, and the tracker's free-fall prediction
-knows nothing about rims and nets, so a crossing computed from predictions is a guess.
+knows nothing about rims and nets, so a crossing computed from predictions is a guess. Fitting the incoming
+arc instead was tried and is worse: any touch of rim or board changes the path.
+
+Hoop units are gravity-aligned (pipeline.prepare() measures "down" from the ball's flights), so a ball
+falling straight down keeps its x. make_max_abs_x follows from physics: the ball's centre must cross within
+(rim radius - ball radius) ~ 0.47 rim radii, plus a little measurement noise.
 """
 
 from dataclasses import dataclass
@@ -155,10 +160,11 @@ class ShotStateMachine:
         if ball.vy < 0.0 and ball.my < 0.0:
             self._enter(RATTLE, t)
             return None
-        if ball.my > 0.0 and abs(ball.mx) > cfg.net_exit_max_abs_x:
-            return self._resolve(t, MISS, "rolled_out")
         if ball.my >= cfg.make_confirm_depth:
             return self._resolve(t, MAKE, "through_rim")
+        # Beside the rim at rim level. Deeper down, a ball leaving the net keeps its sideways speed.
+        if ball.my > 0.0 and abs(ball.mx) > cfg.net_exit_max_abs_x:
+            return self._resolve(t, MISS, "rolled_out")
         return None
 
     def _rattle(self, t: float, ball: BallState) -> ShotEvent | None:

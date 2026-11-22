@@ -17,7 +17,15 @@ class ShotLogicConfig:
     ball_max_size_rim_d: float
 
     # Tracker (hoop units, seconds)
+    # Fallback only: process() measures gravity (direction and strength) from the ball's free flights.
     gravity_rim_r_per_s2: float
+    # Gravity fit: windows of this many frames with one ball >= min_conf whose path fits a parabola within
+    # max_rms (rim radii); needs min_windows of them, and "down" within max_tilt_deg of the image vertical.
+    gravity_fit_window: int
+    gravity_fit_min_conf: float
+    gravity_fit_max_rms: float
+    gravity_fit_min_windows: int
+    gravity_max_tilt_deg: float
     kalman_accel_noise: float
     kalman_meas_var: float
     kalman_init_vel_var: float

@@ -7,6 +7,11 @@
   "ball_max_size_rim_d": 0.9,
 
   "gravity_rim_r_per_s2": 42.9,
+  "gravity_fit_window": 10,
+  "gravity_fit_min_conf": 0.6,
+  "gravity_fit_max_rms": 0.08,
+  "gravity_fit_min_windows": 3,
+  "gravity_max_tilt_deg": 30.0,
   "kalman_accel_noise": 400.0,
   "kalman_meas_var": 0.04,
   "kalman_init_vel_var": 900.0,
@@ -23,7 +28,7 @@
   "approach_half_width": 3.0,
   "approach_height": 8.0,
 
-  "make_max_abs_x": 0.75,
+  "make_max_abs_x": 0.55,
   "rim_contact_abs_x": 1.5,
   "near_rim_height": 1.5,
   "net_exit_max_abs_x": 1.0,

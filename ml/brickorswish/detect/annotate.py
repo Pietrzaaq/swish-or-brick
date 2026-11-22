@@ -1,11 +1,12 @@
 """Draws detections, hoop, tracked ball and shot outcomes onto the video. Needs `opencv-python`; ffmpeg optional."""
 
+import math
 import shutil
 import subprocess
 from pathlib import Path
 
 from ..logic import HoopFrame, ShotLogicConfig
-from ..logic.pipeline import ball_candidates
+from ..logic.pipeline import ball_candidates, prepare
 from ..logic.state_machine import MAKE, MISS, ShotStateMachine
 from ..logic.tracker import BallTracker
 from .crop import watch_crop
@@ -42,9 +43,11 @@ def annotate_video(
     import cv2
 
     out_path = Path(out_path)
-    hf = HoopFrame.from_dict(hoop)  # calibration frame: what the logic sees
+    hf, gravity = prepare(detections, hoop, cfg)  # calibration frame + measured gravity: what the logic sees
     c0 = rim_centre(hoop)
-    tracker, machine = BallTracker(cfg), ShotStateMachine(cfg)
+    tracker, machine = BallTracker(cfg, gravity), ShotStateMachine(cfg)
+    tilt = math.degrees(math.atan2(-hf.down[0], hf.down[1]))
+    gravity_note = f"gravity: {tilt:+.1f} deg from vertical, {gravity:.1f} rim r/s2"
     cap = cv2.VideoCapture(str(video_path))
     w, h = int(hoop["image_width"]), int(hoop["image_height"])
     raw = out_path.with_suffix(".raw.mp4")
@@ -74,7 +77,7 @@ def annotate_video(
             else:
                 tr_draw = tr
                 moved = shift_hoop(hoop, tr)
-                hf_now = HoopFrame.from_dict(moved)
+                hf_now = HoopFrame.from_dict(moved, hf.down)
                 if crop == "hoop":
                     box = watch_crop(moved, cfg)
                     cv2.rectangle(img, box[:2], box[2:], GREY, 1)
@@ -85,9 +88,13 @@ def annotate_video(
                 for d in fr["dets"]:
                     _draw_det(img, d, hf, cfg, s, c0, tr)
             if ball is not None and tr_draw is not None:
-                p = tuple(int(round(v)) for v in to_frame(*hf.to_pixels(ball.x, ball.y), c0, tr_draw))
-                trail = (trail + [p])[-TRAIL:]
-                cv2.circle(img, p, int(6 * s), GREEN, -1 if ball.observed else int(2 * s))
+                if ball.observed:  # the trail joins real sightings only; a guess is a hollow circle, not a path
+                    p = tuple(int(round(v)) for v in to_frame(*hf.to_pixels(ball.mx, ball.my), c0, tr_draw))
+                    trail = (trail + [p])[-TRAIL:]
+                    cv2.circle(img, p, int(6 * s), GREEN, -1)
+                else:
+                    p = tuple(int(round(v)) for v in to_frame(*hf.to_pixels(ball.x, ball.y), c0, tr_draw))
+                    cv2.circle(img, p, int(6 * s), GREEN, max(1, int(s)))
             else:
                 trail = []
             if len(trail) > 1:
@@ -98,13 +105,14 @@ def annotate_video(
                 f"t={t:.2f}s  frame {fr['i']}",
                 f"state: {machine.state}",
                 f"make {counts['make']}  miss {counts['miss']}  uncertain {counts['uncertain']}",
+                gravity_note,
             ]
             for k, line in enumerate(hud):
                 _text(img, line, (int(12 * s), int((30 + 30 * k) * s)), 0.7 * s, WHITE)
             for k, (line, colour) in enumerate(hud_extra):
-                _text(img, line, (int(12 * s), int((120 + 30 * k) * s)), 0.7 * s, colour)
+                _text(img, line, (int(12 * s), int((150 + 30 * k) * s)), 0.7 * s, colour)
             if banner is not None and t <= banner[2]:
-                _text(img, banner[0], (int(12 * s), int(200 * s)), 1.4 * s, banner[1], thick=3)
+                _text(img, banner[0], (int(12 * s), int(230 * s)), 1.4 * s, banner[1], thick=3)
             writer.write(img)
     finally:
         cap.release()
@@ -140,14 +148,12 @@ def draw_hoop_preview(img, hoop: dict, cfg: ShotLogicConfig, crop_box=None):
 
 
 def _draw_hoop(img, hf: HoopFrame, s: float) -> None:
-    import math
-
+    """The rim as clicked (its tilt comes from the clicks, not from gravity)."""
     import cv2
 
     centre = (int(round(hf.cx)), int(round(hf.cy)))
     axes = (int(round(hf.radius_px)), max(1, int(round(hf.ellipse_b * hf.radius_px))))
-    rx, ry = hf.to_pixels(1.0, 0.0)  # right rim edge
-    angle = math.degrees(math.atan2(ry - hf.cy, rx - hf.cx))
+    angle = math.degrees(hf.rim_angle)
     cv2.ellipse(img, centre, axes, angle, 0, 360, YELLOW, max(1, int(2 * s)))
 
 

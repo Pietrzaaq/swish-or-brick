@@ -7,3 +7,6 @@ __pycache__/
 
 # Colab outputs: personal footage, never commit
 /ml/results/
+
+# Personal to-do list
+/TODO.md
