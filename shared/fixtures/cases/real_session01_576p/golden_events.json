@@ -3,49 +3,49 @@
   {
    "shot": 1,
    "outcome": "miss",
-   "t_start": 3.9685,
-   "t_resolve": 4.7688,
+   "t_start": 3.8684,
+   "t_resolve": 4.6688,
    "reason": "left_zone"
   },
   {
    "shot": 2,
    "outcome": "make",
-   "t_start": 17.5747,
+   "t_start": 17.4747,
    "t_resolve": 18.3084,
    "reason": "through_rim"
   },
   {
    "shot": 3,
    "outcome": "make",
-   "t_start": 29.18,
+   "t_start": 29.1133,
    "t_resolve": 29.5135,
    "reason": "through_rim"
   },
   {
    "shot": 4,
    "outcome": "make",
-   "t_start": 39.0846,
+   "t_start": 39.0179,
    "t_resolve": 39.4181,
    "reason": "through_rim"
   },
   {
    "shot": 5,
    "outcome": "make",
-   "t_start": 48.9224,
+   "t_start": 48.8224,
    "t_resolve": 49.1892,
    "reason": "through_rim"
   },
   {
    "shot": 6,
    "outcome": "make",
-   "t_start": 59.9274,
+   "t_start": 59.8607,
    "t_resolve": 61.0946,
    "reason": "through_rim"
   },
   {
    "shot": 7,
    "outcome": "make",
-   "t_start": 70.4323,
+   "t_start": 70.3656,
    "t_resolve": 71.266,
    "reason": "through_rim"
   }

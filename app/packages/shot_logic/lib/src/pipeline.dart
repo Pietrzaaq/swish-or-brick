@@ -80,9 +80,10 @@ double _median(List<double> values) {
 
 double _hypot(double a, double b) => math.sqrt(a * a + b * b);
 
-/// Gravity as seen in this video: (unit "down" vector in the image, strength in rim radii / s^2), measured from
-/// the ball's own free flights, or null if there are too few clean ones. See pipeline.py estimate_gravity().
-((double, double), double)? estimateGravity(
+/// The ball's acceleration in flight as seen in this video, (x, y) in rim radii / s^2 on image axes, measured
+/// from its own free flights, or null if there are too few clean ones. Perspective tilts it (a ball flying away
+/// from the camera seems to slow down), so it drives the tracker only. See pipeline.py estimate_gravity().
+(double, double)? estimateGravity(
   Map<String, dynamic> detections,
   Map<String, dynamic> hoop,
   ShotLogicConfig cfg,
@@ -128,16 +129,16 @@ double _hypot(double a, double b) => math.sqrt(a * a + b * b);
   final ay = _median([for (final w in plausible) w.$2]);
   final mag = _hypot(ax, ay);
   if (mag <= 0.0 || ay / mag < math.cos(cfg.gravityMaxTiltDeg * math.pi / 180.0)) return null;
-  return ((ax / mag, ay / mag), mag);
+  return (ax, ay);
 }
 
-/// Hoop frame aligned with this video's gravity, and gravity strength for the tracker.
-(HoopFrame, double) prepare(Map<String, dynamic> detections, Map<String, dynamic> hoop, ShotLogicConfig cfg) {
-  final est = estimateGravity(detections, hoop, cfg);
-  if (est == null) return (HoopFrame.fromJson(hoop), cfg.gravityRimRPerS2);
-  final (down, g) = est;
-  return (HoopFrame.fromJson(hoop, down), g);
-}
+/// Hoop frame (true vertical) and the ball's flight acceleration in it, for the tracker.
+(HoopFrame, (double, double)) prepare(
+  Map<String, dynamic> detections,
+  Map<String, dynamic> hoop,
+  ShotLogicConfig cfg,
+) =>
+    (HoopFrame.fromJson(hoop), estimateGravity(detections, hoop, cfg) ?? (0.0, cfg.gravityRimRPerS2));
 
 /// detections + hoop calibration + config -> {"shots": [...]}. Pure function,
 /// the contract shared with ml/brickorswish/logic/pipeline.py.
@@ -146,8 +147,8 @@ Map<String, dynamic> process(
   Map<String, dynamic> hoop,
   ShotLogicConfig cfg,
 ) {
-  final (frame, gravity) = prepare(detections, hoop, cfg);
-  final tracker = BallTracker(cfg, gravity);
+  final (frame, accel) = prepare(detections, hoop, cfg);
+  final tracker = BallTracker(cfg, accel);
   final machine = ShotStateMachine(cfg);
   final shots = <Map<String, dynamic>>[];
   double? lastT;

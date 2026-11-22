@@ -20,8 +20,8 @@ the detector loses the ball exactly where it overlaps rim and net, and the track
 knows nothing about rims and nets, so a crossing computed from predictions is a guess. Fitting the incoming
 arc instead was tried and is worse: any touch of rim or board changes the path.
 
-Hoop units are gravity-aligned (pipeline.prepare() measures "down" from the ball's flights), so a ball
-falling straight down keeps its x. make_max_abs_x follows from physics: the ball's centre must cross within
+Hoop units are on the true vertical (image vertical for an upright phone), not on the clicked rim's tilt,
+so a ball falling straight down keeps its x. make_max_abs_x follows from physics: the ball's centre must cross within
 (rim radius - ball radius) ~ 0.47 rim radii, plus a little measurement noise.
 """
 

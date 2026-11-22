@@ -48,10 +48,11 @@ class BallTracker {
   int _hits = 0;
   int _trackId = 0;
 
-  /// Rim radii / s^2 along hoop-frame y (`prepare()` measures it); default from config.
-  final double gravity;
+  /// The ball's acceleration in flight, (x, y) in rim radii / s^2 in the hoop frame (`prepare()` measures it);
+  /// default: config gravity straight down.
+  final (double, double) accel;
 
-  BallTracker(this.cfg, [double? gravity]) : gravity = gravity ?? cfg.gravityRimRPerS2;
+  BallTracker(this.cfg, [(double, double)? accel]) : accel = accel ?? (0.0, cfg.gravityRimRPerS2);
 
   /// Candidates may be weak (>= ballTrackMinConf): any of them can continue the track, but only one with
   /// >= [startMinConf] (default ballMinConf) can start a new one.
@@ -61,8 +62,8 @@ class BallTracker {
     if (kx != null && ky != null) {
       final dt = t - _lastT;
       _lastT = t;
-      kx.predict(dt, 0.0, cfg.kalmanAccelNoise);
-      ky.predict(dt, gravity, cfg.kalmanAccelNoise);
+      kx.predict(dt, accel.$1, cfg.kalmanAccelNoise);
+      ky.predict(dt, accel.$2, cfg.kalmanAccelNoise);
       final match = _match(kx, ky, candidates);
       if (match != null) {
         final (cand, manoeuvre) = match;

@@ -66,13 +66,16 @@ def _median(values: list[float]) -> float:
     return v[n // 2] if n % 2 else (v[n // 2 - 1] + v[n // 2]) / 2.0
 
 
-def estimate_gravity(detections: dict, hoop: dict, cfg: ShotLogicConfig) -> tuple[tuple[float, float], float] | None:
-    """Gravity as seen in this video: (unit "down" vector in the image, strength in rim radii / s^2), measured
-    from the ball's own free flights, or None if there are too few clean ones.
+def estimate_gravity(detections: dict, hoop: dict, cfg: ShotLogicConfig) -> tuple[float, float] | None:
+    """The ball's acceleration in flight as seen in this video, (x, y) in rim radii / s^2 on image axes, measured
+    from its own free flights, or None if there are too few clean ones.
 
     Free flight = a window of consecutive frames with exactly one confident ball whose path fits a parabola
-    closely (rim and ground bounces don't fit). The median acceleration over all such windows is gravity. This
-    absorbs phone roll and the ball's distance from the camera, which the fixed config value cannot."""
+    closely (rim and ground bounces don't fit); the median over all such windows is the result. It differs from
+    the config's textbook value because of the ball's distance from the camera, and it is NOT straight down: a
+    ball flying away from the camera seems to slow down in the picture (perspective), which adds a sideways part
+    (about 10 degrees in our videos while the hoop's posts are vertical). So it drives the tracker's prediction,
+    while the decision axes stay on the true vertical."""
     frame = HoopFrame.from_dict(hoop)  # image axes: zone and size filtering only
     n = cfg.gravity_fit_window
     windows: list[tuple[float, float]] = []
@@ -106,22 +109,20 @@ def estimate_gravity(detections: dict, hoop: dict, cfg: ShotLogicConfig) -> tupl
     mag = math.hypot(ax, ay)
     if mag <= 0.0 or ay / mag < math.cos(math.radians(cfg.gravity_max_tilt_deg)):
         return None
-    return (ax / mag, ay / mag), mag
+    return ax, ay
 
 
-def prepare(detections: dict, hoop: dict, cfg: ShotLogicConfig) -> tuple[HoopFrame, float]:
-    """Hoop frame aligned with this video's gravity, and gravity strength for the tracker."""
-    est = estimate_gravity(detections, hoop, cfg)
-    if est is None:
-        return HoopFrame.from_dict(hoop), cfg.gravity_rim_r_per_s2
-    down, g = est
-    return HoopFrame.from_dict(hoop, down), g
+def prepare(detections: dict, hoop: dict, cfg: ShotLogicConfig) -> tuple[HoopFrame, tuple[float, float]]:
+    """Hoop frame (true vertical) and the ball's flight acceleration in it, for the tracker."""
+    frame = HoopFrame.from_dict(hoop)
+    accel = estimate_gravity(detections, hoop, cfg)
+    return frame, (0.0, cfg.gravity_rim_r_per_s2) if accel is None else accel
 
 
 def process(detections: dict, hoop: dict, cfg: ShotLogicConfig) -> dict:
     """Returns {"shots": [...]} matching shared/schema/events.schema.json."""
-    frame, gravity = prepare(detections, hoop, cfg)
-    tracker = BallTracker(cfg, gravity)
+    frame, accel = prepare(detections, hoop, cfg)
+    tracker = BallTracker(cfg, accel)
     machine = ShotStateMachine(cfg)
     shots = []
     last_t = None

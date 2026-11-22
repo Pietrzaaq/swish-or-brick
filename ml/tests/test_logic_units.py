@@ -105,21 +105,20 @@ class GravityTest(unittest.TestCase):
         self.assertAlmostEqual(acc, 28.0, places=6)
         self.assertLess(rms, 1e-9)
 
-    def test_recovers_tilted_gravity_from_flights(self):
+    def test_measures_the_apparent_acceleration_from_flights(self):
+        # perspective makes the ball seem to fall at an angle; that goes to the tracker, the axes stay vertical
         from brickorswish.logic.pipeline import estimate_gravity, prepare
 
         cfg = load_cfg()
         a = math.radians(8.0)
         down = (-math.sin(a), math.cos(a))
-        est = estimate_gravity(self._flights(down, 30.0), self.HOOP, cfg)
-        self.assertIsNotNone(est)
-        (gx, gy), g = est
-        self.assertAlmostEqual(gx, down[0], places=6)
-        self.assertAlmostEqual(gy, down[1], places=6)
-        self.assertAlmostEqual(g, 30.0, places=4)
-        frame, gravity = prepare(self._flights(down, 30.0), self.HOOP, cfg)
-        self.assertAlmostEqual(frame.down[0], down[0], places=6)
-        self.assertAlmostEqual(gravity, 30.0, places=4)
+        ax, ay = estimate_gravity(self._flights(down, 30.0), self.HOOP, cfg)
+        self.assertAlmostEqual(ax, 30.0 * down[0], places=4)
+        self.assertAlmostEqual(ay, 30.0 * down[1], places=4)
+        frame, accel = prepare(self._flights(down, 30.0), self.HOOP, cfg)
+        self.assertEqual(frame.down, (0.0, 1.0))
+        self.assertAlmostEqual(accel[0], ax)
+        self.assertAlmostEqual(accel[1], ay)
 
     def test_falls_back_without_clean_flights(self):
         from brickorswish.logic.pipeline import estimate_gravity, prepare
@@ -127,8 +126,8 @@ class GravityTest(unittest.TestCase):
         cfg = load_cfg()
         weak = self._flights((0.0, 1.0), 30.0, conf=cfg.gravity_fit_min_conf / 2)  # too unsure to measure from
         self.assertIsNone(estimate_gravity(weak, self.HOOP, cfg))
-        frame, gravity = prepare(weak, self.HOOP, cfg)
-        self.assertEqual((frame.down, gravity), ((0.0, 1.0), cfg.gravity_rim_r_per_s2))
+        frame, accel = prepare(weak, self.HOOP, cfg)
+        self.assertEqual((frame.down, accel), ((0.0, 1.0), (0.0, cfg.gravity_rim_r_per_s2)))
         sideways = self._flights((1.0, 0.0), 30.0)  # "gravity" pointing sideways is not believed
         self.assertIsNone(estimate_gravity(sideways, self.HOOP, cfg))
 

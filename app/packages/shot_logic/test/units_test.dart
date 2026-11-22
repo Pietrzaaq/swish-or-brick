@@ -92,22 +92,24 @@ void main() {
       expect(acc, closeTo(28.0, 1e-6));
       expect(rms, lessThan(1e-9));
     });
-    test('recovers tilted gravity from flights', () {
+    test('measures the apparent acceleration from flights', () {
       final cfg = ShotLogicConfig.fromJson(rawConfig());
       final a = 8.0 * math.pi / 180.0;
       final down = (-math.sin(a), math.cos(a));
-      final ((gx, gy), g) = estimateGravity(flights(down, 30.0), hoop, cfg)!;
-      expect(gx, closeTo(down.$1, 1e-6));
-      expect(gy, closeTo(down.$2, 1e-6));
-      expect(g, closeTo(30.0, 1e-4));
+      final (ax, ay) = estimateGravity(flights(down, 30.0), hoop, cfg)!;
+      expect(ax, closeTo(30.0 * down.$1, 1e-4));
+      expect(ay, closeTo(30.0 * down.$2, 1e-4));
+      final (frame, accel) = prepare(flights(down, 30.0), hoop, cfg);
+      expect(frame.down, (0.0, 1.0)); // axes stay on the true vertical
+      expect(accel.$1, closeTo(ax, 1e-12));
     });
     test('falls back without clean flights', () {
       final cfg = ShotLogicConfig.fromJson(rawConfig());
       final weak = flights((0.0, 1.0), 30.0, conf: cfg.gravityFitMinConf / 2);
       expect(estimateGravity(weak, hoop, cfg), isNull);
-      final (frame, gravity) = prepare(weak, hoop, cfg);
+      final (frame, accel) = prepare(weak, hoop, cfg);
       expect(frame.down, (0.0, 1.0));
-      expect(gravity, cfg.gravityRimRPerS2);
+      expect(accel, (0.0, cfg.gravityRimRPerS2));
       expect(estimateGravity(flights((1.0, 0.0), 30.0), hoop, cfg), isNull);
     });
   });

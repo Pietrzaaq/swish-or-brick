@@ -43,11 +43,11 @@ def annotate_video(
     import cv2
 
     out_path = Path(out_path)
-    hf, gravity = prepare(detections, hoop, cfg)  # calibration frame + measured gravity: what the logic sees
+    hf, accel = prepare(detections, hoop, cfg)  # calibration frame + measured ball acceleration: what the logic sees
     c0 = rim_centre(hoop)
-    tracker, machine = BallTracker(cfg, gravity), ShotStateMachine(cfg)
-    tilt = math.degrees(math.atan2(-hf.down[0], hf.down[1]))
-    gravity_note = f"gravity: {tilt:+.1f} deg from vertical, {gravity:.1f} rim r/s2"
+    tracker, machine = BallTracker(cfg, accel), ShotStateMachine(cfg)
+    tilt = math.degrees(math.atan2(-accel[0], accel[1]))
+    gravity_note = f"ball falls at {math.hypot(*accel):.1f} rim r/s2, {tilt:+.1f} deg (perspective)"
     cap = cv2.VideoCapture(str(video_path))
     w, h = int(hoop["image_width"]), int(hoop["image_height"])
     raw = out_path.with_suffix(".raw.mp4")

@@ -3,77 +3,77 @@
   {
    "shot": 1,
    "outcome": "miss",
-   "t_start": 35.0623,
-   "t_resolve": 35.9297,
+   "t_start": 34.9622,
+   "t_resolve": 35.863,
    "reason": "left_zone"
   },
   {
    "shot": 2,
    "outcome": "make",
-   "t_start": 48.6736,
+   "t_start": 48.6068,
    "t_resolve": 49.4742,
    "reason": "through_rim"
   },
   {
    "shot": 3,
    "outcome": "make",
-   "t_start": 60.2832,
+   "t_start": 60.2164,
    "t_resolve": 60.7502,
    "reason": "through_rim"
   },
   {
    "shot": 4,
    "outcome": "make",
-   "t_start": 70.1913,
+   "t_start": 70.1246,
    "t_resolve": 70.625,
    "reason": "through_rim"
   },
   {
    "shot": 5,
    "outcome": "make",
-   "t_start": 80.0328,
+   "t_start": 79.9661,
    "t_resolve": 80.3998,
    "reason": "through_rim"
   },
   {
    "shot": 6,
    "outcome": "make",
-   "t_start": 91.0419,
+   "t_start": 90.9752,
    "t_resolve": 92.343,
    "reason": "through_rim"
   },
   {
    "shot": 7,
    "outcome": "make",
-   "t_start": 101.5506,
+   "t_start": 101.4839,
    "t_resolve": 102.3846,
    "reason": "through_rim"
   },
   {
    "shot": 8,
    "outcome": "miss",
-   "t_start": 114.9283,
+   "t_start": 114.8616,
    "t_resolve": 115.9291,
    "reason": "rim_out"
   },
   {
    "shot": 9,
    "outcome": "miss",
-   "t_start": 124.2694,
-   "t_resolve": 125.3036,
+   "t_start": 124.2026,
+   "t_resolve": 125.2702,
    "reason": "rim_out"
   },
   {
    "shot": 10,
    "outcome": "make",
-   "t_start": 138.1141,
+   "t_start": 138.0474,
    "t_resolve": 138.5145,
    "reason": "through_rim"
   },
   {
    "shot": 11,
    "outcome": "make",
-   "t_start": 144.2526,
+   "t_start": 144.1858,
    "t_resolve": 145.1199,
    "reason": "through_rim"
   }

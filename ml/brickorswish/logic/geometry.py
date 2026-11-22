@@ -4,12 +4,12 @@ import math
 
 
 class HoopFrame:
-    """Origin at rim centre, 1 unit = rim radius, y along gravity ("down"), x perpendicular to it (to the right).
+    """Origin at rim centre, 1 unit = rim radius, y along "down", x perpendicular to it (to the right).
 
     The clicks give only the rim's centre, size and drawn ellipse. They do NOT give the axes: in a photo the rim
-    looks tilted from perspective and phone roll, and treating that tilt as horizontal makes a ball falling
-    straight down drift sideways. `down` is the gravity direction in the image (default: image vertical;
-    pipeline.prepare() measures it from the ball's own flights)."""
+    looks tilted from perspective, and treating that tilt as horizontal makes a ball falling straight down drift
+    sideways. `down` is the true vertical in the image: the image vertical for an upright phone (default), later
+    the phone's gravity sensor. Not the ball's apparent fall direction: perspective bends that (see pipeline)."""
 
     def __init__(self, left, right, front, down=(0.0, 1.0)):
         lx, ly = float(left[0]), float(left[1])

@@ -1,4 +1,5 @@
-"""Single-ball tracker: gated nearest neighbour + per-axis Kalman with gravity."""
+"""Single-ball tracker: gated nearest neighbour + per-axis Kalman with a constant acceleration (gravity as the
+ball appears to fall in this video)."""
 
 import math
 from dataclasses import dataclass
@@ -31,10 +32,11 @@ class BallState:
 
 
 class BallTracker:
-    def __init__(self, cfg: ShotLogicConfig, gravity: float | None = None):
-        """gravity: rim radii / s^2 along hoop-frame y (pipeline.prepare() measures it); default from config."""
+    def __init__(self, cfg: ShotLogicConfig, accel: tuple[float, float] | None = None):
+        """accel: the ball's acceleration in flight, (x, y) in rim radii / s^2 in the hoop frame
+        (pipeline.prepare() measures it); default: config gravity straight down."""
         self.cfg = cfg
-        self.gravity = cfg.gravity_rim_r_per_s2 if gravity is None else gravity
+        self.accel = (0.0, cfg.gravity_rim_r_per_s2) if accel is None else accel
         self._kx: AxisKalman | None = None
         self._ky: AxisKalman | None = None
         self._last_t = 0.0
@@ -49,8 +51,8 @@ class BallTracker:
         if self._kx is not None:
             dt = t - self._last_t
             self._last_t = t
-            self._kx.predict(dt, 0.0, cfg.kalman_accel_noise)
-            self._ky.predict(dt, self.gravity, cfg.kalman_accel_noise)
+            self._kx.predict(dt, self.accel[0], cfg.kalman_accel_noise)
+            self._ky.predict(dt, self.accel[1], cfg.kalman_accel_noise)
             match = self._match(candidates)
             if match is not None:
                 cand, manoeuvre = match
