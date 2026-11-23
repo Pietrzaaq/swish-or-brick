@@ -4,6 +4,8 @@ The model is either rfdetr itself (PyTorch; Colab, see ml/notebooks/detect_video
 exported to ONNX (onnx_model.OnnxDetector; runs locally with onnxruntime + numpy + opencv-python-headless).
 """
 
+import json
+import os
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -86,6 +88,9 @@ def detect_video(
     batch_size: int = 8,
     transforms: list[Transform | None] | None = None,
     log: Callable[[str], None] = print,
+    checkpoint: Path | None = None,
+    resume_key: dict | None = None,
+    checkpoint_every: int = 600,
 ) -> dict:
     """Detections in the CALIBRATION frame's pixel coordinates (the frame hoop.json was tapped on).
 
@@ -96,8 +101,17 @@ def detect_video(
 
     `threshold` is deliberately below cfg.ball_min_conf: the logic does its own filtering, and the
     low-confidence boxes are useful when judging recall.
+
+    `checkpoint` (a JSON file) is rewritten every `checkpoint_every` frames; a later call with the same
+    `resume_key` skips the frames already done, or returns at once if the earlier call finished.
     """
     import cv2
+
+    key = json.loads(json.dumps(resume_key)) if resume_key is not None else None
+    saved = _load_checkpoint(checkpoint, key)
+    if saved is not None and saved["complete"]:
+        log(f"detections: reusing the finished result of an earlier run ({checkpoint})")
+        return saved["detections"]
 
     if crop not in ("hoop", "full"):
         raise ValueError("crop must be 'hoop' or 'full'")
@@ -111,6 +125,12 @@ def detect_video(
     pending: list[tuple[int, object, tuple[int, int, int, int], Transform]] = []
     started = time.monotonic()
     size_checked = False
+    start_at = 0
+    if saved is not None:
+        frames = {f["i"]: f for f in saved["detections"]["frames"]}
+        start_at = saved["done"]
+        log(f"detections: continuing an earlier run from frame {start_at} of ~{total}")
+    last_saved = start_at
 
     def flush():
         results = predict_boxes(model, [img for _, img, _, _ in pending], threshold)
@@ -118,8 +138,23 @@ def detect_video(
             frames[i] = {"i": i, "t": frame_time(i, fps), "dets": stabilize_dets(_to_dets(dets, box[:2]), c0, tr)}
         pending.clear()
 
+    def save(done: int, complete: bool, result: dict) -> None:
+        if checkpoint is None:
+            return
+        tmp = Path(str(checkpoint) + ".tmp")
+        tmp.write_text(json.dumps({"key": key, "done": done, "complete": complete, "detections": result}),
+                       encoding="utf-8")
+        os.replace(tmp, checkpoint)
+
+    def result() -> dict:
+        moving = "stabilized" if transforms is not None else "still camera"
+        source = f"{Path(video_path).name} | {model_label(model)} | crop={crop} | thr={threshold} | {moving}"
+        return {"fps": round(fps, 3), "source": source, "frames": [frames[k] for k in sorted(frames)]}
+
     try:
         i = 0
+        while i < start_at and cap.grab():  # done in an earlier run: skip without detecting
+            i += 1
         while True:
             ok, bgr = cap.read()
             if not ok:
@@ -143,18 +178,33 @@ def detect_video(
                 if len(pending) == batch_size:
                     flush()
             i += 1
-            if total and i % max(1, total // 10) == 0:
-                log(f"  {i}/{total} frames, {time.monotonic() - started:.0f}s")
+            if total and i % max(1, total // 20) == 0:
+                spent = time.monotonic() - started
+                left = (total - i) * spent / max(1, i - start_at)
+                log(f"  {i}/{total} frames, {spent:.0f}s, about {left / 60:.0f} min left")
+            if checkpoint is not None and not pending and i - last_saved >= checkpoint_every:
+                save(i, False, result())
+                last_saved = i
         if pending:
             flush()
     finally:
         cap.release()
     if not frames:
         raise ValueError(f"no frames decoded from {video_path}")
+    done = result()
+    save(i, True, done)
+    return done
 
-    moving = "stabilized" if transforms is not None else "still camera"
-    source = f"{Path(video_path).name} | {model_label(model)} | crop={crop} | thr={threshold} | {moving}"
-    return {"fps": round(fps, 3), "source": source, "frames": [frames[k] for k in sorted(frames)]}
+
+def _load_checkpoint(path: Path | None, key) -> dict | None:
+    """The saved progress for this exact job (same key), or None."""
+    if path is None or key is None or not Path(path).exists():
+        return None
+    try:
+        saved = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return saved if saved.get("key") == key else None
 
 
 def _to_dets(boxes, offset: tuple[int, int]) -> list[dict]:
