@@ -75,61 +75,7 @@ class KalmanTest(unittest.TestCase):
             kf.predict(dt, g, 400.0)
             kf.update(v0 * t + 0.5 * g * t * t, 0.04)
         t = 24 * dt
-        self.assertAlmostEqual(kf.v, v0 + g * t, delta=0.5)
-
-
-class GravityTest(unittest.TestCase):
-    HOOP = {"image_width": 1920, "image_height": 1080, "left": [900, 400], "right": [1020, 400], "front": [960, 415]}
-
-    def _flights(self, down, g, n_flights=4, fps=30.0, conf=0.9):
-        """Detections of free flights near the hoop with gravity g (rim radii / s^2) along `down`."""
-        r, frames, t = 60.0, [], 0.0
-        for k in range(n_flights):
-            x0, y0, vx, vy = -4.0 + k, -9.0, 4.0, -6.0 + k  # rim units, image axes
-            for i in range(20):
-                s = i / fps
-                x = x0 + vx * s + 0.5 * g * down[0] * s * s
-                y = y0 + vy * s + 0.5 * g * down[1] * s * s
-                det = {"cls": "ball", "conf": conf, "x": 960 + x * r, "y": 400 + y * r, "w": 63.0, "h": 63.0}
-                frames.append({"i": len(frames), "t": t, "dets": [det]})
-                t += 1.0 / fps
-            frames.append({"i": len(frames), "t": t, "dets": []})  # break between flights
-            t += 1.0 / fps
-        return {"fps": fps, "frames": frames}
-
-    def test_fit_accel_is_exact_on_a_parabola(self):
-        from brickorswish.logic.pipeline import fit_accel
-
-        ts = [i / 30 for i in range(10)]
-        acc, rms = fit_accel(ts, [3.0 - 2.0 * t + 0.5 * 28.0 * t * t for t in ts])
-        self.assertAlmostEqual(acc, 28.0, places=6)
-        self.assertLess(rms, 1e-9)
-
-    def test_measures_the_apparent_acceleration_from_flights(self):
-        # perspective makes the ball seem to fall at an angle; that goes to the tracker, the axes stay vertical
-        from brickorswish.logic.pipeline import estimate_gravity, prepare
-
-        cfg = load_cfg()
-        a = math.radians(8.0)
-        down = (-math.sin(a), math.cos(a))
-        ax, ay = estimate_gravity(self._flights(down, 30.0), self.HOOP, cfg)
-        self.assertAlmostEqual(ax, 30.0 * down[0], places=4)
-        self.assertAlmostEqual(ay, 30.0 * down[1], places=4)
-        frame, accel = prepare(self._flights(down, 30.0), self.HOOP, cfg)
-        self.assertEqual(frame.down, (0.0, 1.0))
-        self.assertAlmostEqual(accel[0], ax)
-        self.assertAlmostEqual(accel[1], ay)
-
-    def test_falls_back_without_clean_flights(self):
-        from brickorswish.logic.pipeline import estimate_gravity, prepare
-
-        cfg = load_cfg()
-        weak = self._flights((0.0, 1.0), 30.0, conf=cfg.gravity_fit_min_conf / 2)  # too unsure to measure from
-        self.assertIsNone(estimate_gravity(weak, self.HOOP, cfg))
-        frame, accel = prepare(weak, self.HOOP, cfg)
-        self.assertEqual((frame.down, accel), ((0.0, 1.0), (0.0, cfg.gravity_rim_r_per_s2)))
-        sideways = self._flights((1.0, 0.0), 30.0)  # "gravity" pointing sideways is not believed
-        self.assertIsNone(estimate_gravity(sideways, self.HOOP, cfg))
+        self.assertAlmostEqual(kf.vel, v0 + g * t, delta=0.5)
 
 
 class TrackerTest(unittest.TestCase):
@@ -143,7 +89,7 @@ class TrackerTest(unittest.TestCase):
             distractor = Candidate(4.0, -3.0, 0.7)
             state = tracker.step(t, [distractor, ball])
             self.assertEqual(state.track_id, 1)
-        self.assertAlmostEqual(state.x, ball.x, delta=0.1)
+        self.assertAlmostEqual(state.est_x, ball.x, delta=0.1)
         self.assertGreater(state.vy, 0.0)
 
     def test_coasts_then_drops(self):
@@ -159,17 +105,17 @@ class TrackerTest(unittest.TestCase):
     def test_never_starts_outside_watch_region(self):
         tracker = BallTracker(load_cfg())
         self.assertIsNone(tracker.step(0.0, [Candidate(20.0, 0.0, 0.99)]))
-        self.assertTrue(math.isfinite(tracker.step(0.1, [Candidate(0.0, -2.0, 0.5)]).x))
+        self.assertTrue(math.isfinite(tracker.step(0.1, [Candidate(0.0, -2.0, 0.5)]).est_x))
 
     def test_weak_detection_continues_but_does_not_start(self):
         cfg = load_cfg()
         weak = (cfg.ball_track_min_conf + cfg.ball_min_conf) / 2
         tracker = BallTracker(cfg)
-        self.assertIsNone(tracker.step(0.0, [Candidate(0.0, -5.0, weak)]))  # too weak to start
+        self.assertIsNone(tracker.step(0.0, [Candidate(0.0, -5.0, weak)]))
         tracker.step(1 / 30, [Candidate(0.0, -5.0, 0.9)])
-        state = tracker.step(2 / 30, [Candidate(0.0, -4.9, weak)])  # ...but continues a track
+        state = tracker.step(2 / 30, [Candidate(0.0, -4.9, weak)])
         self.assertTrue(state.observed)
-        self.assertEqual((state.mx, state.my), (0.0, -4.9))
+        self.assertEqual((state.seen_x, state.seen_y), (0.0, -4.9))
         # while a shot is under way the caller lowers the start threshold
         self.assertTrue(BallTracker(cfg).step(0.0, [Candidate(0.0, -5.0, weak)], weak).observed)
 
@@ -183,11 +129,11 @@ class TrackerTest(unittest.TestCase):
         for k in range(hidden):
             state = tracker.step((4 + k) / 30, [])
             self.assertFalse(state.observed)
-        self.assertGreater(state.y - 0.5, cfg.reacquire_radius)  # the prediction is already far below
+        self.assertGreater(state.est_y - 0.5, cfg.reacquire_radius)  # the prediction is already far below
         state = tracker.step((4 + hidden) / 30, [Candidate(-0.4, 0.5, 0.4)])
         self.assertTrue(state.observed)
         self.assertEqual(state.track_id, 2)
-        self.assertEqual((state.mx, state.my), (-0.4, 0.5))
+        self.assertEqual((state.seen_x, state.seen_y), (-0.4, 0.5))
 
 
 class StateMachineTest(unittest.TestCase):
@@ -246,27 +192,89 @@ class StateMachineTest(unittest.TestCase):
         ev = sm.step(0.33, self._ball(0.33, 1.07, 2.39))  # still moving sideways as it leaves the net
         self.assertEqual((ev.outcome, ev.reason), ("make", "through_rim"))
 
-    def test_beside_the_rim_at_rim_level_is_rolled_out(self):
+    def test_rolling_on_the_rim_edge_then_down_the_net_is_a_make(self):
+        # real shot (9-minute session, #39): the ball's box sits off-centre while it rolls on the rim
         from brickorswish.logic.state_machine import ShotStateMachine
 
         sm = ShotStateMachine(load_cfg())
         self._approach(sm)
-        sm.step(0.1, self._ball(0.1, 0.1, -0.5))
-        sm.step(0.13, self._ball(0.13, 0.2, 0.3))
+        sm.step(0.1, self._ball(0.1, -0.32, -0.16))
+        sm.step(0.3, self._ball(0.3, -1.0, 0.52))  # crossed at x -0.48
         self.assertEqual(sm.state, "pending_make")
-        ev = sm.step(0.16, self._ball(0.16, 1.3, 0.6))
-        self.assertEqual((ev.outcome, ev.reason), ("miss", "rolled_out"))
+        self.assertIsNone(sm.step(0.33, self._ball(0.33, -1.19, 0.74)))
+        ev = sm.step(0.6, self._ball(0.6, -0.28, 2.16))  # out of the bottom of the net
+        self.assertEqual((ev.outcome, ev.reason), ("make", "through_rim"))
 
-    def test_down_at_the_rim_edge_is_a_miss(self):
+    def test_edge_crossing_then_out_of_the_net_is_a_make(self):
+        # real shot (9-minute session, #26): hidden while it rolls in; the straight line says x -0.61
+        from brickorswish.logic.state_machine import ShotStateMachine
+
+        sm = ShotStateMachine(load_cfg())
+        self._approach(sm)
+        sm.step(0.1, self._ball(0.1, -0.99, -1.45))
+        ev = sm.step(0.3, self._ball(0.3, 0.0, 2.31))
+        self.assertEqual((ev.outcome, ev.reason), ("make", "through_net"))
+
+    def test_edge_crossing_then_beside_the_net_is_a_miss(self):
         from brickorswish.logic.state_machine import ShotStateMachine
 
         sm = ShotStateMachine(load_cfg())
         self._approach(sm)
         sm.step(0.1, self._ball(0.1, 1.0, -0.25))
-        sm.step(0.13, self._ball(0.13, 0.36, 1.03))  # crossed at x ~ 0.87: over the edge
+        sm.step(0.13, self._ball(0.13, 1.2, 0.5))  # crossed at x ~ 1.07: over the edge
         self.assertEqual(sm.state, "rattle")
-        ev = sm.step(0.2, self._ball(0.2, -0.1, 1.99))
+        ev = sm.step(0.2, self._ball(0.2, 1.45, 1.4))
         self.assertEqual((ev.outcome, ev.reason), ("miss", "rim_out"))
+
+
+class StaticSpotTest(unittest.TestCase):
+    """The rim's red bracket is detected as a ball next to every shot; a ball that never moves is ignored."""
+
+    HOOP = {"image_width": 1920, "image_height": 1080, "left": [900, 400], "right": [1020, 400], "front": [960, 415]}
+
+    @staticmethod
+    def _det(x, y, conf=0.3):  # rim units -> pixels
+        return {"cls": "ball", "conf": conf, "x": 960 + 60 * x, "y": 400 + 60 * y, "w": 40.0, "h": 40.0}
+
+    def _session(self, bracket_seconds):
+        frames = []
+        for i in range(30 * 30):  # 30 s at 30 fps
+            t = i / 30.0
+            dets = [self._det(1.22, 0.48)] if int(t) < bracket_seconds and i % 30 < 3 else []
+            if 10.0 <= t < 10.5:  # a ball flying past once
+                dets.append(self._det(-3.0 + 6.0 * (t - 10.0), -2.0))
+            frames.append({"i": i, "t": t, "dets": dets})
+        return {"fps": 30.0, "frames": frames}
+
+    def test_bracket_is_ignored_and_the_ball_is_not(self):
+        from brickorswish.logic.pipeline import ball_candidates, static_spots
+
+        cfg = load_cfg()
+        hf = HoopFrame.from_dict(self.HOOP)
+        static = static_spots(self._session(cfg.static_min_seconds), hf, cfg)
+        self.assertTrue(static)
+        self.assertEqual(ball_candidates([self._det(1.25, 0.45)], hf, cfg, static), [])  # same spot, a bit off
+        self.assertEqual(len(ball_candidates([self._det(1.22, -1.5)], hf, cfg, static)), 1)  # ball above it
+        self.assertEqual(len(ball_candidates([self._det(-2.0, -2.0)], hf, cfg, static)), 1)
+
+    def test_a_spot_seen_in_few_seconds_is_not_static(self):
+        from brickorswish.logic.pipeline import static_spots
+
+        cfg = load_cfg()
+        hf = HoopFrame.from_dict(self.HOOP)
+        self.assertEqual(static_spots(self._session(cfg.static_min_seconds - 1), hf, cfg), frozenset())
+
+    def test_balls_dropping_through_the_rim_centre_are_not_static(self):
+        from brickorswish.logic.pipeline import static_spots
+
+        cfg = load_cfg()
+        frames = []
+        for i in range(30 * 30):  # a make every second, each in the rim centre for one frame only
+            t = i / 30.0
+            dets = [self._det(0.0, -2.0 + 0.7 * (i % 30))] if i % 30 < 6 else []
+            frames.append({"i": i, "t": t, "dets": dets})
+        static = static_spots({"fps": 30.0, "frames": frames}, HoopFrame.from_dict(self.HOOP), cfg)
+        self.assertEqual(static, frozenset())
 
 
 if __name__ == "__main__":

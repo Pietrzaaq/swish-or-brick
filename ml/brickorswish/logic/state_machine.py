@@ -1,4 +1,7 @@
-"""Make/miss state machine in hoop units (see docs/implementation-analysis.md §3.4).
+"""Make/miss state machine (see docs/implementation-analysis.md §3.4).
+
+Positions are in rim units (geometry.py): (0, 0) is the rim centre, 1 = rim radius, y grows downward, so y < 0 is
+above the rim and |x| < 1 is inside it.
 
 IDLE -> APPROACH        ball in approach zone moving down
 APPROACH -> PENDING_MAKE  crosses rim plane (y=0) downward with |x| <= make_max_abs_x
@@ -6,23 +9,19 @@ APPROACH -> PENDING_MAKE  crosses rim plane (y=0) downward with |x| <= make_max_
          -> MISS          crosses wide, or leaves the zone sideways
 PENDING_MAKE -> MAKE      seen below make_confirm_depth (it may already be leaving the net sideways)
              -> RATTLE    pops back up
-             -> MISS      beside the rim (|x| > net_exit_max_abs_x) while still above make_confirm_depth
 RATTLE -> PENDING_MAKE    comes back down through the rim
-       -> MISS            comes down outside, leaves the zone, or is seen deep below the rim after
-                          crossing it at the edge (it went down outside the make zone)
+       -> MAKE / MISS     first seen >= exit_depth below the rim: within exit_max_abs_x make, else miss
+       -> MISS            crosses wide (|x| > rim_contact_abs_x), or leaves the zone
        -> UNCERTAIN       rattle_timeout_s without resolution
-any active -> UNCERTAIN   ball not observed for lost_timeout_s (pending_make_lost_timeout_s
-                          in PENDING_MAKE, where the net hides the ball)
+any active -> UNCERTAIN   not seen for lost_timeout_s (pending_make_lost_timeout_s in PENDING_MAKE: the net hides it)
 
-Only SEEN balls decide anything. A rim crossing is placed by interpolating between the last ball seen
-above the rim plane and the first one seen below it (at most cross_max_gap_s apart, across track restarts):
-the detector loses the ball exactly where it overlaps rim and net, and the tracker's free-fall prediction
-knows nothing about rims and nets, so a crossing computed from predictions is a guess. Fitting the incoming
-arc instead was tried and is worse: any touch of rim or board changes the path.
+Only SEEN balls decide. A rim crossing is interpolated between the last ball seen above the rim plane and the
+first seen below it, even across track restarts: the detector loses the ball where it overlaps rim and net, and
+the free-fall prediction knows nothing about them. Fitting the incoming arc is worse: any touch of rim or board
+changes the path. A ball rolling around the rim does not follow the straight line, so an edge crossing is
+decided by where the ball comes out below.
 
-Hoop units are on the true vertical (image vertical for an upright phone), not on the clicked rim's tilt,
-so a ball falling straight down keeps its x. make_max_abs_x follows from physics: the ball's centre must cross within
-(rim radius - ball radius) ~ 0.47 rim radii, plus a little measurement noise.
+make_max_abs_x: the ball's centre must cross within rim radius - ball radius ~ 0.47, plus measurement noise.
 """
 
 from dataclasses import dataclass
@@ -68,7 +67,6 @@ class ShotStateMachine:
         self._t_last_seen = 0.0
         self._cooldown_until = -1.0
         self._above: BallState | None = None  # last ball SEEN above the rim plane during this shot
-        self._cross_x: float | None = None  # where this shot last crossed the rim plane downward
 
     @property
     def idle(self) -> bool:
@@ -86,7 +84,7 @@ class ShotStateMachine:
         if ball is not None and ball.observed:
             self._t_last_seen = t
         event = self._active(t, ball)
-        if event is None and ball is not None and ball.observed and ball.my < 0.0:
+        if event is None and ball is not None and ball.observed and ball.seen_y < 0.0:
             self._above = ball
         return event
 
@@ -96,18 +94,15 @@ class ShotStateMachine:
             return None
         return self._resolve(t, UNCERTAIN, "stream_ended")
 
-    # --- states -------------------------------------------------------------
-
     def _idle(self, t: float, ball: BallState | None) -> None:
         cfg = self.cfg
         if ball is None or t < self._cooldown_until:
             return
-        in_zone = abs(ball.x) <= cfg.approach_half_width and -cfg.approach_height <= ball.y < 0.0
+        in_zone = abs(ball.est_x) <= cfg.approach_half_width and -cfg.approach_height <= ball.est_y < 0.0
         if in_zone and ball.vy > 0.0:
             self._t_start = t
             self._t_last_seen = t
             self._above = ball if ball.observed else None
-            self._cross_x = None
             self._enter(APPROACH, t)
 
     def _active(self, t: float, ball: BallState | None) -> ShotEvent | None:
@@ -127,15 +122,22 @@ class ShotStateMachine:
         return self._rattle(t, ball)
 
     def _crossing(self, ball: BallState) -> float | None:
-        """x where the ball crossed the rim plane downward, between the last ball seen above it and this
-        one (seen at or below it), or None."""
+        """x where the ball crossed the rim plane downward since the last sighting above it, or None."""
         above = self._above
-        if above is None or ball.my < 0.0 or ball.t - above.t > self.cfg.cross_max_gap_s:
+        if above is None or ball.seen_y < 0.0 or ball.t - above.t > self.cfg.cross_max_gap_s:
             return None
         self._above = None
-        f = (0.0 - above.my) / (ball.my - above.my)
-        self._cross_x = above.mx + f * (ball.mx - above.mx)
-        return self._cross_x
+        f = (0.0 - above.seen_y) / (ball.seen_y - above.seen_y)
+        return above.seen_x + f * (ball.seen_x - above.seen_x)
+
+    def _exit(self, t: float, ball: BallState) -> ShotEvent | None:
+        """A ball seen at least exit_depth below the rim plane after touching the rim: out of the net, or beside it."""
+        cfg = self.cfg
+        if ball.seen_y < cfg.exit_depth:
+            return None
+        if abs(ball.seen_x) <= cfg.exit_max_abs_x:
+            return self._resolve(t, MAKE, "through_net")
+        return self._resolve(t, MISS, "rim_out")
 
     def _approach(self, t: float, ball: BallState) -> ShotEvent | None:
         cfg = self.cfg
@@ -145,44 +147,37 @@ class ShotStateMachine:
                 self._enter(PENDING_MAKE, t)
             elif abs(x_cross) <= cfg.rim_contact_abs_x:
                 self._enter(RATTLE, t)
+                return self._exit(t, ball)  # this sighting may already be below the net
             else:
                 return self._resolve(t, MISS, "wide")
             return None
-        if ball.vy < 0.0 and ball.my > -cfg.near_rim_height and abs(ball.mx) <= cfg.rim_contact_abs_x:
+        if ball.vy < 0.0 and ball.seen_y > -cfg.near_rim_height and abs(ball.seen_x) <= cfg.rim_contact_abs_x:
             self._enter(RATTLE, t)
             return None
-        if abs(ball.mx) > cfg.approach_half_width:
+        if abs(ball.seen_x) > cfg.approach_half_width:
             return self._resolve(t, MISS, "left_zone")
         return None
 
     def _pending_make(self, t: float, ball: BallState) -> ShotEvent | None:
         cfg = self.cfg
-        if ball.vy < 0.0 and ball.my < 0.0:
+        if ball.vy < 0.0 and ball.seen_y < 0.0:
             self._enter(RATTLE, t)
             return None
-        if ball.my >= cfg.make_confirm_depth:
+        if ball.seen_y >= cfg.make_confirm_depth:
             return self._resolve(t, MAKE, "through_rim")
-        # Beside the rim at rim level. Deeper down, a ball leaving the net keeps its sideways speed.
-        if ball.my > 0.0 and abs(ball.mx) > cfg.net_exit_max_abs_x:
-            return self._resolve(t, MISS, "rolled_out")
         return None
 
     def _rattle(self, t: float, ball: BallState) -> ShotEvent | None:
         cfg = self.cfg
         x_cross = self._crossing(ball)
-        if x_cross is not None:
-            if abs(x_cross) <= cfg.make_max_abs_x:
-                self._enter(PENDING_MAKE, t)
-                return None
+        if x_cross is not None and abs(x_cross) <= cfg.make_max_abs_x:
+            self._enter(PENDING_MAKE, t)
+            return None
+        if x_cross is not None and abs(x_cross) > cfg.rim_contact_abs_x:
             return self._resolve(t, MISS, "rim_out")
-        if abs(ball.mx) > cfg.approach_half_width:
+        if abs(ball.seen_x) > cfg.approach_half_width:
             return self._resolve(t, MISS, "rim_out")
-        if (ball.my >= cfg.make_confirm_depth and self._cross_x is not None
-                and abs(self._cross_x) > cfg.make_max_abs_x):
-            return self._resolve(t, MISS, "rim_out")  # went down at the edge and never came back through
-        return None
-
-    # --- helpers ------------------------------------------------------------
+        return self._exit(t, ball)
 
     def _enter(self, state: str, t: float) -> None:
         self.state = state
@@ -193,6 +188,5 @@ class ShotStateMachine:
         event = ShotEvent(self._shots, outcome, self._t_start, t, reason)
         self.state = IDLE
         self._above = None
-        self._cross_x = None
         self._cooldown_until = t + self.cfg.debounce_s
         return event

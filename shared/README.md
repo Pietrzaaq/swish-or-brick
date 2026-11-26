@@ -2,14 +2,17 @@
 
 The contract between the Python reference implementation (`ml/`) and the Dart port (`app/packages/shot_logic`, later). Neither language owns these files; a change here must update both implementations in the same PR.
 
-## Units: the hoop frame
+## Units: rim units
 
-All logic runs in **hoop units**, never pixels:
+All logic runs in **rim units**, never pixels:
 
 - origin = rim centre (midpoint of the left and right rim edges)
-- x axis = from left rim edge to right rim edge
 - 1 unit = rim radius in pixels (half the left-right distance)
-- y points **down** (as in images): negative y is above the rim, positive y is below
+- y points **down** (true vertical, as in images): negative y is above the rim, positive y is below
+- x is sideways, to the right: |x| < 1 is inside the rim
+
+So `make_max_abs_x: 0.55` means "crossed the rim within 0.55 radii of its centre", whatever the video size or
+distance from the hoop.
 
 A real rim radius is 22.86 cm, so gravity is about 9.81 / 0.2286 ≈ 42.9 units/s².
 
@@ -17,7 +20,7 @@ A real rim radius is 22.86 cm, so gravity is about 9.81 / 0.2286 ≈ 42.9 units/
 
 | Path | Content |
 |---|---|
-| `config/shot_logic.v1.json` | Every threshold used by the tracker and state machine. Lengths in hoop units, times in seconds. |
+| `config/shot_logic.v1.json` | Every threshold used by the tracker and state machine. Lengths in rim units, times in seconds. |
 | `schema/hoop.schema.json` | Manual hoop calibration (3 clicks, pixel coordinates). |
 | `schema/detections.schema.json` | Per-frame detector output (pixel coordinates, box centres). |
 | `schema/events.schema.json` | Resolved shots produced by `process()`. |

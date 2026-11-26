@@ -4,41 +4,41 @@ import 'config.dart';
 import 'kalman.dart';
 
 class Candidate {
-  final double x; // hoop units
+  final double x; // rim units
   final double y;
   final double conf;
   const Candidate(this.x, this.y, this.conf);
 }
 
+/// est*: the Kalman estimate, smooth but it assumes free fall, so it sinks below a ball resting on the rim.
+/// seen*: the detection itself (the prediction while coasting). Rim decisions use seen*.
 class BallState {
   final double t;
-  final double x;
-  final double y;
+  final double estX;
+  final double estY;
   final double vx;
   final double vy;
-  final bool observed; // false while coasting on prediction
+  final bool observed; // false while coasting on the prediction
   final int trackId;
   final int hits;
-
-  /// The detection itself when observed (the prediction while coasting). The filtered x/y assume free
-  /// fall and drift below a ball resting on the rim; rim decisions use these instead.
-  final double mx;
-  final double my;
+  final double seenX;
+  final double seenY;
   const BallState({
     required this.t,
-    required this.x,
-    required this.y,
+    required this.estX,
+    required this.estY,
     required this.vx,
     required this.vy,
     required this.observed,
     required this.trackId,
     required this.hits,
-    required this.mx,
-    required this.my,
+    required this.seenX,
+    required this.seenY,
   });
 }
 
-/// Single-ball tracker: gated nearest neighbour + per-axis Kalman with gravity.
+/// Single-ball tracker: picks the detection nearest to where the Kalman filter expects the ball, coasts through
+/// short gaps (net, rim) on the prediction, and restarts when the prediction has run away.
 class BallTracker {
   final ShotLogicConfig cfg;
   AxisKalman? _kx;
@@ -48,22 +48,17 @@ class BallTracker {
   int _hits = 0;
   int _trackId = 0;
 
-  /// The ball's acceleration in flight, (x, y) in rim radii / s^2 in the hoop frame (`prepare()` measures it);
-  /// default: config gravity straight down.
-  final (double, double) accel;
+  BallTracker(this.cfg);
 
-  BallTracker(this.cfg, [(double, double)? accel]) : accel = accel ?? (0.0, cfg.gravityRimRPerS2);
-
-  /// Candidates may be weak (>= ballTrackMinConf): any of them can continue the track, but only one with
-  /// >= [startMinConf] (default ballMinConf) can start a new one.
+  /// Any candidate can continue the track; only one >= [startMinConf] (default ballMinConf) starts one.
   BallState? step(double t, List<Candidate> candidates, [double? startMinConf]) {
     final minConf = startMinConf ?? cfg.ballMinConf;
     final kx = _kx, ky = _ky;
     if (kx != null && ky != null) {
       final dt = t - _lastT;
       _lastT = t;
-      kx.predict(dt, accel.$1, cfg.kalmanAccelNoise);
-      ky.predict(dt, accel.$2, cfg.kalmanAccelNoise);
+      kx.predict(dt, 0.0, cfg.kalmanAccelNoise);
+      ky.predict(dt, cfg.gravityRimRPerS2, cfg.kalmanAccelNoise);
       final match = _match(kx, ky, candidates);
       if (match != null) {
         final (cand, manoeuvre) = match;
@@ -97,15 +92,15 @@ class BallTracker {
     return _state(t, observed: true, meas: start);
   }
 
-  /// Best candidate inside the chi-square gate; else the nearest one within
-  /// reacquireRadius, flagged as a manoeuvre (the ball bounced).
+  /// Best candidate inside the gate; else the nearest within reacquireRadius, flagged as a bounce.
+  /// The gate: distance from the prediction in standard deviations, squared (gateChi2 9.21 = 99% of real balls).
   (Candidate, bool)? _match(AxisKalman kx, AxisKalman ky, List<Candidate> candidates) {
     final sx = kx.innovationVar(cfg.kalmanMeasVar);
     final sy = ky.innovationVar(cfg.kalmanMeasVar);
     Candidate? best, near;
     var bestD2 = double.infinity, nearD = double.infinity;
     for (final c in candidates) {
-      final dx = c.x - kx.p, dy = c.y - ky.p;
+      final dx = c.x - kx.pos, dy = c.y - ky.pos;
       final d2 = dx * dx / sx + dy * dy / sy;
       if (d2 < bestD2) {
         best = c;
@@ -134,14 +129,14 @@ class BallTracker {
 
   BallState _state(double t, {required bool observed, Candidate? meas}) => BallState(
         t: t,
-        x: _kx!.p,
-        y: _ky!.p,
-        vx: _kx!.v,
-        vy: _ky!.v,
+        estX: _kx!.pos,
+        estY: _ky!.pos,
+        vx: _kx!.vel,
+        vy: _ky!.vel,
         observed: observed,
         trackId: _trackId,
         hits: _hits,
-        mx: meas?.x ?? _kx!.p,
-        my: meas?.y ?? _ky!.p,
+        seenX: meas?.x ?? _kx!.pos,
+        seenY: meas?.y ?? _ky!.pos,
       );
 }

@@ -1,10 +1,7 @@
 """Generate synthetic fixture cases into shared/fixtures/cases/synthetic_*.
 
-Ball paths are simulated in hoop units with simple physics (gravity, bounces as
-velocity changes, net drag), then projected to pixels with a fixed calibration and
-written as detector output. The ground-truth outcome is known by construction.
-
-Deterministic: a fixed seed per case. Re-run after changing this file:
+Ball paths are simulated in rim units, so the true outcome is known by construction. Deterministic (fixed
+seed per case). Re-run after changing this file:
 
     py -m brickorswish.tools.gen_synthetic          (from ml/)
 """
@@ -52,7 +49,7 @@ class Shot:
 
 
 def simulate(shot: Shot, t: float) -> tuple[float, float] | None:
-    """Ball position (hoop units) at absolute time t, or None outside the shot."""
+    """Rim units, or None outside the shot."""
     if t < shot.t0:
         return None
     x, y = shot.start
@@ -74,13 +71,11 @@ def simulate(shot: Shot, t: float) -> tuple[float, float] | None:
 
 
 def fall_time(dy: float) -> float:
-    """Time to fall dy units from rest."""
     return math.sqrt(2.0 * dy / G)
 
 
 def drop_shot(t0: float, x_start: float, x_at_rim: float, rim_y: float = 0.0, top: float = -9.0) -> tuple[Shot, float]:
-    """A ball released from rest at (x_start, top) reaching (x_at_rim, rim_y). Returns the
-    shot (first phase only) and the time to reach rim_y."""
+    """Released from rest at (x_start, top), reaching (x_at_rim, rim_y). Returns (shot, time to reach rim_y)."""
     tf = fall_time(rim_y - top)
     vx = (x_at_rim - x_start) / tf
     return Shot(t0, (x_start, top), (vx, 0.0), [Phase(tf)]), tf
@@ -151,9 +146,9 @@ def case_gap_at_rim() -> tuple[list[Shot], list[str]]:
 
 @dataclass
 class Noise:
-    jitter: float = 0.0  # std dev, hoop units
+    jitter: float = 0.0  # std dev, rim units
     drop_rate: float = 0.0
-    distractor: tuple[float, float] | None = None  # static false positive, hoop units
+    distractor: tuple[float, float] | None = None  # static false positive, rim units
 
 
 CASES = {

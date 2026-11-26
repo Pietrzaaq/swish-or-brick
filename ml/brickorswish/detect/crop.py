@@ -4,15 +4,14 @@ import math
 
 from ..logic import HoopFrame, ShotLogicConfig
 
-# COCO names that get a project-wide name in detections.json. Everything else keeps its COCO name.
+# Everything else keeps its COCO name.
 CLASS_RENAME = {"sports ball": "ball"}
 
 
 def watch_crop(hoop: dict, cfg: ShotLogicConfig, square: bool = True) -> tuple[int, int, int, int]:
     """Pixel box (x0, y0, x1, y1), end-exclusive, covering the tracker's watch zone.
 
-    The detector resizes its input to a fixed square, so a square crop avoids distorting the ball.
-    The box is clamped to the image; if it does not fit, it is shifted inside, then cut.
+    Square because the detector stretches its input to a square; a square crop does not distort the ball.
     """
     frame = HoopFrame.from_dict(hoop)
     w_img, h_img = int(hoop["image_width"]), int(hoop["image_height"])
@@ -59,5 +58,5 @@ def box_to_det(cls_name: str, conf: float, xyxy, offset: tuple[float, float] = (
 
 
 def frame_time(i: int, fps: float) -> float:
-    """Timestamp of frame i at a constant frame rate. Phone videos can be variable-rate; v1 ignores that."""
+    """Assumes a constant frame rate. Phone videos can be variable-rate; v1 ignores that."""
     return round(i / fps, 6)

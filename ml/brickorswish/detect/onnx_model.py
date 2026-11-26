@@ -1,14 +1,10 @@
-"""RF-DETR exported to ONNX, run with ONNX Runtime: the same network and weights as rfdetr.RFDETRNano, without
-PyTorch. Needs only `onnxruntime`, `numpy` and `opencv-python-headless` (ml/requirements-local.txt).
+"""RF-DETR exported to ONNX, run with ONNX Runtime: the same network as rfdetr.RFDETRNano, without PyTorch.
 
-The network sits between two thin layers that rfdetr's predict() does in Python; they are reproduced here and
-checked against rfdetr itself by `brickorswish.detect.export_onnx` (in Colab):
-- before: RGB image -> stretched to the model's square input (bilinear, no antialias), /255, ImageNet mean/std;
-- after: sigmoid on the class logits, top `num_select` over all (query, class) pairs, boxes from normalised
-  (cx, cy, w, h) to pixel corners of the ORIGINAL image, clamped, then `confidence > threshold`.
+rfdetr's pre- and post-processing (done in Python, not in the network) are reproduced here; export_onnx checks
+them against rfdetr itself.
 
-The model card (model.json next to model.onnx) holds the input size, normalisation, class names and the
-file's SHA-256; the file is refused if the checksum does not match.
+The model is refused if its SHA-256 does not match its card (model.json). Local runs also require it to be in
+ml/models.sha256 (in git), so a model and card swapped together (e.g. on Drive) are refused too.
 """
 
 import hashlib
@@ -21,7 +17,7 @@ from pathlib import Path
 class Box:
     cls: str
     conf: float
-    xyxy: tuple[float, float, float, float]  # pixels of the image passed in
+    xyxy: tuple[float, float, float, float]  # pixels of the original image
 
 
 def sha256_of(path: str | Path) -> str:
@@ -32,8 +28,14 @@ def sha256_of(path: str | Path) -> str:
     return h.hexdigest()
 
 
+def read_pins(path: str | Path) -> set[str]:
+    """The allowed SHA-256s: first word of each non-empty, non-# line."""
+    lines = Path(path).read_text(encoding="utf-8").splitlines()
+    return {ln.split()[0].lower() for ln in lines if ln.strip() and not ln.lstrip().startswith("#")}
+
+
 def preprocess(rgb, size: tuple[int, int], means, stds):
-    """HxWx3 uint8 RGB -> 1x3xHxW float32, as rfdetr predict() prepares it."""
+    """HxWx3 uint8 RGB -> 1x3xHxW float32, as rfdetr predict() prepares it (stretched, no antialias)."""
     import cv2
     import numpy as np
 
@@ -70,11 +72,9 @@ def postprocess(dets, logits, image_w: int, image_h: int, threshold: float, num_
 
 
 class OnnxDetector:
-    """predict(list of RGB uint8 images, threshold) -> list of list[Box], one list per image."""
-
-    def __init__(self, model_path: str | Path, card_path: str | Path | None = None, threads: int = 0):
-        import onnxruntime as ort
-
+    def __init__(self, model_path: str | Path, card_path: str | Path | None = None, threads: int = 0,
+                 pinned: set[str] | None = None):
+        """pinned: allowed SHA-256s (ml/models.sha256); None only in Colab, right after exporting a new model."""
         model_path = Path(model_path)
         card_path = Path(card_path) if card_path else model_path.with_suffix(".json")
         card = json.loads(card_path.read_text(encoding="utf-8"))
@@ -82,6 +82,11 @@ class OnnxDetector:
         if digest != card["sha256"]:
             raise ValueError(f"{model_path.name}: checksum {digest[:12]}... does not match its card "
                              f"({card['sha256'][:12]}...); refusing to load it")
+        if pinned is not None and digest not in pinned:
+            raise ValueError(f"{model_path.name}: checksum {digest[:12]}... is not in ml/models.sha256; refusing to "
+                             "load it (a new model: check its Colab export, then add its line there)")
+        import onnxruntime as ort  # only after the checks: nothing parses the file before them
+
         ort.disable_telemetry_events()
         opts = ort.SessionOptions()
         if threads:

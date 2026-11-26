@@ -1,45 +1,51 @@
-/// One-axis constant-acceleration Kalman filter, state (position, velocity).
-/// Mirrors ml/brickorswish/logic/kalman.py line for line.
+/// One-axis Kalman filter with a known acceleration (gravity): position + velocity, and how unsure it is of each.
+///
+/// predict() moves the ball forward by its velocity and gravity and grows the uncertainty; update() pulls it
+/// towards a detection, more strongly the more unsure it was. x and y are filtered independently to keep every
+/// matrix 2x2.
 class AxisKalman {
-  double p;
-  double v = 0.0;
-  double p00;
-  double p01 = 0.0;
-  double p11;
+  double pos;
+  double vel = 0.0;
 
-  AxisKalman(this.p, double measVar, double initVelVar)
-      : p00 = measVar,
-        p11 = initVelVar;
+  // Uncertainty (covariance): of the position, between position and velocity, of the velocity.
+  double posVar;
+  double cov = 0.0;
+  double velVar;
+
+  AxisKalman(this.pos, double measVar, double initVelVar)
+      : posVar = measVar,
+        velVar = initVelVar;
 
   void predict(double dt, double accel, double accelNoise) {
-    p = p + v * dt + 0.5 * accel * dt * dt;
-    v = v + accel * dt;
+    pos = pos + vel * dt + 0.5 * accel * dt * dt;
+    vel = vel + accel * dt;
     final dt2 = dt * dt;
-    final n00 = p00 + 2.0 * dt * p01 + dt2 * p11;
-    final n01 = p01 + dt * p11;
-    final n11 = p11;
-    p00 = n00 + accelNoise * dt2 * dt2 / 4.0;
-    p01 = n01 + accelNoise * dt2 * dt / 2.0;
-    p11 = n11 + accelNoise * dt2;
+    final newPosVar = posVar + 2.0 * dt * cov + dt2 * velVar;
+    final newCov = cov + dt * velVar;
+    // accelNoise: how far the real ball may stray from pure free fall (spin, air, perspective).
+    posVar = newPosVar + accelNoise * dt2 * dt2 / 4.0;
+    cov = newCov + accelNoise * dt2 * dt / 2.0;
+    velVar = velVar + accelNoise * dt2;
   }
 
-  double innovationVar(double measVar) => p00 + measVar;
+  /// Expected spread of the next detection around the prediction.
+  double innovationVar(double measVar) => posVar + measVar;
 
   void update(double z, double measVar) {
-    final s = p00 + measVar;
-    final k0 = p00 / s;
-    final k1 = p01 / s;
-    final resid = z - p;
-    p += k0 * resid;
-    v += k1 * resid;
-    final o00 = p00, o01 = p01, o11 = p11;
-    p00 = (1.0 - k0) * o00;
-    p01 = (1.0 - k0) * o01;
-    p11 = o11 - k1 * o01;
+    final s = posVar + measVar;
+    final gainPos = posVar / s;
+    final gainVel = cov / s;
+    final resid = z - pos;
+    pos += gainPos * resid;
+    vel += gainVel * resid;
+    final oPosVar = posVar, oCov = cov, oVelVar = velVar;
+    posVar = (1.0 - gainPos) * oPosVar;
+    cov = (1.0 - gainPos) * oCov;
+    velVar = oVelVar - gainVel * oCov;
   }
 
-  /// Called on a manoeuvre (rim/backboard bounce): forget the old velocity.
+  /// On a rim/backboard bounce: forget the old velocity.
   void inflateVelocity(double extraVar) {
-    p11 += extraVar;
+    velVar += extraVar;
   }
 }

@@ -1,0 +1,438 @@
+{
+ "shots": [
+  {
+   "shot": 1,
+   "outcome": "make",
+   "t_start": 16.599,
+   "t_resolve": 18.3989,
+   "reason": "through_rim"
+  },
+  {
+   "shot": 2,
+   "outcome": "make",
+   "t_start": 26.7318,
+   "t_resolve": 27.0984,
+   "reason": "through_rim"
+  },
+  {
+   "shot": 3,
+   "outcome": "make",
+   "t_start": 32.3648,
+   "t_resolve": 32.7314,
+   "reason": "through_rim"
+  },
+  {
+   "shot": 4,
+   "outcome": "make",
+   "t_start": 41.4642,
+   "t_resolve": 41.8309,
+   "reason": "through_rim"
+  },
+  {
+   "shot": 5,
+   "outcome": "make",
+   "t_start": 50.297,
+   "t_resolve": 50.6637,
+   "reason": "through_rim"
+  },
+  {
+   "shot": 6,
+   "outcome": "make",
+   "t_start": 55.6967,
+   "t_resolve": 56.5967,
+   "reason": "through_rim"
+  },
+  {
+   "shot": 7,
+   "outcome": "miss",
+   "t_start": 68.7293,
+   "t_resolve": 69.7292,
+   "reason": "rim_out"
+  },
+  {
+   "shot": 8,
+   "outcome": "make",
+   "t_start": 78.462,
+   "t_resolve": 78.8287,
+   "reason": "through_rim"
+  },
+  {
+   "shot": 9,
+   "outcome": "make",
+   "t_start": 97.6276,
+   "t_resolve": 98.9608,
+   "reason": "through_rim"
+  },
+  {
+   "shot": 10,
+   "outcome": "make",
+   "t_start": 106.3604,
+   "t_resolve": 106.727,
+   "reason": "through_rim"
+  },
+  {
+   "shot": 11,
+   "outcome": "miss",
+   "t_start": 116.9264,
+   "t_resolve": 118.8597,
+   "reason": "rim_out"
+  },
+  {
+   "shot": 12,
+   "outcome": "make",
+   "t_start": 128.4591,
+   "t_resolve": 128.8257,
+   "reason": "through_rim"
+  },
+  {
+   "shot": 13,
+   "outcome": "make",
+   "t_start": 137.2919,
+   "t_resolve": 137.8252,
+   "reason": "through_rim"
+  },
+  {
+   "shot": 14,
+   "outcome": "make",
+   "t_start": 146.4914,
+   "t_resolve": 147.458,
+   "reason": "through_rim"
+  },
+  {
+   "shot": 15,
+   "outcome": "miss",
+   "t_start": 156.5241,
+   "t_resolve": 157.4574,
+   "reason": "rim_out"
+  },
+  {
+   "shot": 16,
+   "outcome": "make",
+   "t_start": 164.7569,
+   "t_resolve": 165.1569,
+   "reason": "through_rim"
+  },
+  {
+   "shot": 17,
+   "outcome": "make",
+   "t_start": 172.6565,
+   "t_resolve": 173.9231,
+   "reason": "through_rim"
+  },
+  {
+   "shot": 18,
+   "outcome": "miss",
+   "t_start": 180.3227,
+   "t_resolve": 180.556,
+   "reason": "left_zone"
+  },
+  {
+   "shot": 19,
+   "outcome": "miss",
+   "t_start": 188.1222,
+   "t_resolve": 188.7222,
+   "reason": "rim_out"
+  },
+  {
+   "shot": 20,
+   "outcome": "miss",
+   "t_start": 199.4549,
+   "t_resolve": 200.3882,
+   "reason": "rim_out"
+  },
+  {
+   "shot": 21,
+   "outcome": "miss",
+   "t_start": 206.5211,
+   "t_resolve": 207.3211,
+   "reason": "rim_out"
+  },
+  {
+   "shot": 22,
+   "outcome": "make",
+   "t_start": 217.3872,
+   "t_resolve": 218.1538,
+   "reason": "through_rim"
+  },
+  {
+   "shot": 23,
+   "outcome": "miss",
+   "t_start": 228.9531,
+   "t_resolve": 229.9198,
+   "reason": "rim_out"
+  },
+  {
+   "shot": 24,
+   "outcome": "make",
+   "t_start": 238.9526,
+   "t_resolve": 239.3525,
+   "reason": "through_rim"
+  },
+  {
+   "shot": 25,
+   "outcome": "make",
+   "t_start": 244.1856,
+   "t_resolve": 244.5522,
+   "reason": "through_rim"
+  },
+  {
+   "shot": 26,
+   "outcome": "miss",
+   "t_start": 249.4186,
+   "t_resolve": 250.0852,
+   "reason": "rim_out"
+  },
+  {
+   "shot": 27,
+   "outcome": "miss",
+   "t_start": 254.3517,
+   "t_resolve": 255.1849,
+   "reason": "wide"
+  },
+  {
+   "shot": 28,
+   "outcome": "make",
+   "t_start": 266.6843,
+   "t_resolve": 267.1176,
+   "reason": "through_rim"
+  },
+  {
+   "shot": 29,
+   "outcome": "miss",
+   "t_start": 274.8171,
+   "t_resolve": 275.6171,
+   "reason": "rim_out"
+  },
+  {
+   "shot": 30,
+   "outcome": "make",
+   "t_start": 286.9164,
+   "t_resolve": 287.283,
+   "reason": "through_rim"
+  },
+  {
+   "shot": 31,
+   "outcome": "make",
+   "t_start": 294.116,
+   "t_resolve": 294.5159,
+   "reason": "through_rim"
+  },
+  {
+   "shot": 32,
+   "outcome": "miss",
+   "t_start": 300.5489,
+   "t_resolve": 301.0156,
+   "reason": "rim_out"
+  },
+  {
+   "shot": 33,
+   "outcome": "miss",
+   "t_start": 316.2147,
+   "t_resolve": 316.7146,
+   "reason": "rim_out"
+  },
+  {
+   "shot": 34,
+   "outcome": "make",
+   "t_start": 328.3473,
+   "t_resolve": 329.1472,
+   "reason": "through_rim"
+  },
+  {
+   "shot": 35,
+   "outcome": "make",
+   "t_start": 337.6134,
+   "t_resolve": 338.4134,
+   "reason": "through_rim"
+  },
+  {
+   "shot": 36,
+   "outcome": "make",
+   "t_start": 349.2127,
+   "t_resolve": 350.2127,
+   "reason": "through_rim"
+  },
+  {
+   "shot": 37,
+   "outcome": "make",
+   "t_start": 358.3455,
+   "t_resolve": 358.6788,
+   "reason": "through_rim"
+  },
+  {
+   "shot": 38,
+   "outcome": "make",
+   "t_start": 366.8783,
+   "t_resolve": 367.645,
+   "reason": "through_rim"
+  },
+  {
+   "shot": 39,
+   "outcome": "make",
+   "t_start": 377.0777,
+   "t_resolve": 378.5443,
+   "reason": "through_rim"
+  },
+  {
+   "shot": 40,
+   "outcome": "make",
+   "t_start": 387.0105,
+   "t_resolve": 387.4771,
+   "reason": "through_rim"
+  },
+  {
+   "shot": 41,
+   "outcome": "make",
+   "t_start": 396.01,
+   "t_resolve": 396.3766,
+   "reason": "through_rim"
+  },
+  {
+   "shot": 42,
+   "outcome": "make",
+   "t_start": 404.7761,
+   "t_resolve": 405.1427,
+   "reason": "through_rim"
+  },
+  {
+   "shot": 43,
+   "outcome": "make",
+   "t_start": 413.7089,
+   "t_resolve": 414.9422,
+   "reason": "through_rim"
+  },
+  {
+   "shot": 44,
+   "outcome": "make",
+   "t_start": 424.275,
+   "t_resolve": 424.6416,
+   "reason": "through_rim"
+  },
+  {
+   "shot": 45,
+   "outcome": "make",
+   "t_start": 431.4079,
+   "t_resolve": 431.7745,
+   "reason": "through_rim"
+  },
+  {
+   "shot": 46,
+   "outcome": "make",
+   "t_start": 439.3074,
+   "t_resolve": 439.874,
+   "reason": "through_rim"
+  },
+  {
+   "shot": 47,
+   "outcome": "make",
+   "t_start": 445.7737,
+   "t_resolve": 446.307,
+   "reason": "through_rim"
+  },
+  {
+   "shot": 48,
+   "outcome": "make",
+   "t_start": 452.5066,
+   "t_resolve": 452.9399,
+   "reason": "through_rim"
+  },
+  {
+   "shot": 49,
+   "outcome": "make",
+   "t_start": 460.3728,
+   "t_resolve": 460.9395,
+   "reason": "through_rim"
+  },
+  {
+   "shot": 50,
+   "outcome": "make",
+   "t_start": 468.0724,
+   "t_resolve": 469.039,
+   "reason": "through_rim"
+  },
+  {
+   "shot": 51,
+   "outcome": "make",
+   "t_start": 477.6385,
+   "t_resolve": 478.0384,
+   "reason": "through_rim"
+  },
+  {
+   "shot": 52,
+   "outcome": "make",
+   "t_start": 484.2381,
+   "t_resolve": 485.1714,
+   "reason": "through_rim"
+  },
+  {
+   "shot": 53,
+   "outcome": "make",
+   "t_start": 496.5374,
+   "t_resolve": 497.3706,
+   "reason": "through_rim"
+  },
+  {
+   "shot": 54,
+   "outcome": "make",
+   "t_start": 509.9699,
+   "t_resolve": 510.3699,
+   "reason": "through_rim"
+  },
+  {
+   "shot": 55,
+   "outcome": "make",
+   "t_start": 516.6695,
+   "t_resolve": 517.0695,
+   "reason": "through_rim"
+  },
+  {
+   "shot": 56,
+   "outcome": "make",
+   "t_start": 524.5357,
+   "t_resolve": 525.869,
+   "reason": "through_rim"
+  },
+  {
+   "shot": 57,
+   "outcome": "miss",
+   "t_start": 534.7018,
+   "t_resolve": 535.6684,
+   "reason": "rim_out"
+  },
+  {
+   "shot": 58,
+   "outcome": "miss",
+   "t_start": 546.0344,
+   "t_resolve": 546.3344,
+   "reason": "left_zone"
+  },
+  {
+   "shot": 59,
+   "outcome": "make",
+   "t_start": 550.2009,
+   "t_resolve": 550.6008,
+   "reason": "through_rim"
+  },
+  {
+   "shot": 60,
+   "outcome": "make",
+   "t_start": 557.9004,
+   "t_resolve": 558.267,
+   "reason": "through_rim"
+  },
+  {
+   "shot": 61,
+   "outcome": "make",
+   "t_start": 564.9,
+   "t_resolve": 565.6333,
+   "reason": "through_rim"
+  },
+  {
+   "shot": 62,
+   "outcome": "miss",
+   "t_start": 576.666,
+   "t_resolve": 577.3326,
+   "reason": "rim_out"
+  }
+ ]
+}

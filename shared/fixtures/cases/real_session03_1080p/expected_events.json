@@ -1,0 +1,255 @@
+{
+ "shots": [
+  {
+   "shot": 1,
+   "outcome": "make"
+  },
+  {
+   "shot": 2,
+   "outcome": "make"
+  },
+  {
+   "shot": 3,
+   "outcome": "make"
+  },
+  {
+   "shot": 4,
+   "outcome": "make"
+  },
+  {
+   "shot": 5,
+   "outcome": "make"
+  },
+  {
+   "shot": 6,
+   "outcome": "make"
+  },
+  {
+   "shot": 7,
+   "outcome": "miss"
+  },
+  {
+   "shot": 8,
+   "outcome": "make"
+  },
+  {
+   "shot": 9,
+   "outcome": "miss",
+   "known_wrong": "miss that falls in front of the rim: looks like a make in 2D; needs the ball-in-net detector class"
+  },
+  {
+   "shot": 10,
+   "outcome": "make"
+  },
+  {
+   "shot": 11,
+   "outcome": "miss"
+  },
+  {
+   "shot": 12,
+   "outcome": "make"
+  },
+  {
+   "shot": 13,
+   "outcome": "make"
+  },
+  {
+   "shot": 14,
+   "outcome": "make"
+  },
+  {
+   "shot": 15,
+   "outcome": "miss"
+  },
+  {
+   "shot": 16,
+   "outcome": "make"
+  },
+  {
+   "shot": 17,
+   "outcome": "miss",
+   "known_wrong": "miss that falls in front of the rim: looks like a make in 2D; needs the ball-in-net detector class"
+  },
+  {
+   "shot": 18,
+   "outcome": "miss"
+  },
+  {
+   "shot": 19,
+   "outcome": "miss"
+  },
+  {
+   "shot": 20,
+   "outcome": "miss"
+  },
+  {
+   "shot": 21,
+   "outcome": "miss"
+  },
+  {
+   "shot": 22,
+   "outcome": "make"
+  },
+  {
+   "shot": 23,
+   "outcome": "miss"
+  },
+  {
+   "shot": 24,
+   "outcome": "make"
+  },
+  {
+   "shot": 25,
+   "outcome": "make"
+  },
+  {
+   "shot": 26,
+   "outcome": "miss"
+  },
+  {
+   "shot": 27,
+   "outcome": "miss"
+  },
+  {
+   "shot": 28,
+   "outcome": "make"
+  },
+  {
+   "shot": 29,
+   "outcome": "miss"
+  },
+  {
+   "shot": 30,
+   "outcome": "make"
+  },
+  {
+   "shot": 31,
+   "outcome": "make"
+  },
+  {
+   "shot": 32,
+   "outcome": "miss"
+  },
+  {
+   "shot": 33,
+   "outcome": "miss"
+  },
+  {
+   "shot": 34,
+   "outcome": "make"
+  },
+  {
+   "shot": 35,
+   "outcome": "make"
+  },
+  {
+   "shot": 36,
+   "outcome": "make"
+  },
+  {
+   "shot": 37,
+   "outcome": "make"
+  },
+  {
+   "shot": 38,
+   "outcome": "make"
+  },
+  {
+   "shot": 39,
+   "outcome": "make"
+  },
+  {
+   "shot": 40,
+   "outcome": "make"
+  },
+  {
+   "shot": 41,
+   "outcome": "make"
+  },
+  {
+   "shot": 42,
+   "outcome": "make"
+  },
+  {
+   "shot": 43,
+   "outcome": "make"
+  },
+  {
+   "shot": 44,
+   "outcome": "make"
+  },
+  {
+   "shot": 45,
+   "outcome": "make"
+  },
+  {
+   "shot": 46,
+   "outcome": "make"
+  },
+  {
+   "shot": 47,
+   "outcome": "make"
+  },
+  {
+   "shot": 48,
+   "outcome": "make"
+  },
+  {
+   "shot": 49,
+   "outcome": "make"
+  },
+  {
+   "shot": 50,
+   "outcome": "make"
+  },
+  {
+   "shot": 51,
+   "outcome": "make"
+  },
+  {
+   "shot": 52,
+   "outcome": "miss",
+   "known_wrong": "miss that falls in front of the rim: looks like a make in 2D; needs the ball-in-net detector class"
+  },
+  {
+   "shot": 53,
+   "outcome": "make"
+  },
+  {
+   "shot": 54,
+   "outcome": "make"
+  },
+  {
+   "shot": 55,
+   "outcome": "make"
+  },
+  {
+   "shot": 56,
+   "outcome": "make"
+  },
+  {
+   "shot": 57,
+   "outcome": "miss"
+  },
+  {
+   "shot": 58,
+   "outcome": "miss"
+  },
+  {
+   "shot": 59,
+   "outcome": "make"
+  },
+  {
+   "shot": 60,
+   "outcome": "make"
+  },
+  {
+   "shot": 61,
+   "outcome": "make"
+  },
+  {
+   "shot": 62,
+   "outcome": "miss"
+  }
+ ]
+}

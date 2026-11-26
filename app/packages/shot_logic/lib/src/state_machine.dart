@@ -1,11 +1,14 @@
 import 'config.dart';
 import 'tracker.dart';
 
-/// Make/miss state machine. See ml/brickorswish/logic/state_machine.py for the
-/// transition table; this file mirrors it line for line.
+/// Make/miss state machine; transition table and rationale in ml/brickorswish/logic/state_machine.py.
 ///
-/// Only SEEN balls decide anything. A rim crossing is placed by interpolating between the last ball seen
-/// above the rim plane and the first one seen below it (at most crossMaxGapS apart, across track restarts).
+/// Positions are in rim units (geometry.dart): (0, 0) is the rim centre, 1 = rim radius, y grows downward, so
+/// y < 0 is above the rim and |x| < 1 is inside it.
+///
+/// Only SEEN balls decide. A rim crossing is interpolated between the last ball seen above the rim plane and
+/// the first seen below it, even across track restarts. A ball rolling around the rim does not follow the
+/// straight line, so an edge crossing is decided by where the ball comes out below ([_exit]).
 enum ShotPhase { idle, approach, pendingMake, rattle }
 
 class ShotEvent {
@@ -36,7 +39,6 @@ class ShotStateMachine {
   double _tLastSeen = 0.0;
   double _cooldownUntil = -1.0;
   BallState? _above; // last ball SEEN above the rim plane during this shot
-  double? _crossX; // where this shot last crossed the rim plane downward
 
   ShotStateMachine(this.cfg);
 
@@ -52,7 +54,7 @@ class ShotStateMachine {
 
     if (ball != null && ball.observed) _tLastSeen = t;
     final event = _active(t, ball);
-    if (event == null && ball != null && ball.observed && ball.my < 0.0) _above = ball;
+    if (event == null && ball != null && ball.observed && ball.seenY < 0.0) _above = ball;
     return event;
   }
 
@@ -62,14 +64,13 @@ class ShotStateMachine {
 
   void _idle(double t, BallState? ball) {
     if (ball == null || t < _cooldownUntil) return;
-    final inZone = ball.x.abs() <= cfg.approachHalfWidth &&
-        -cfg.approachHeight <= ball.y &&
-        ball.y < 0.0;
+    final inZone = ball.estX.abs() <= cfg.approachHalfWidth &&
+        -cfg.approachHeight <= ball.estY &&
+        ball.estY < 0.0;
     if (inZone && ball.vy > 0.0) {
       _tStart = t;
       _tLastSeen = t;
       _above = ball.observed ? ball : null;
-      _crossX = null;
       _enter(ShotPhase.approach, t);
     }
   }
@@ -92,16 +93,20 @@ class ShotStateMachine {
     };
   }
 
-  /// x where the ball crossed the rim plane downward, between the last ball seen above it and this one
-  /// (seen at or below it), or null.
+  /// x where the ball crossed the rim plane downward since the last sighting above it, or null.
   double? _crossing(BallState ball) {
     final above = _above;
-    if (above == null || ball.my < 0.0 || ball.t - above.t > cfg.crossMaxGapS) return null;
+    if (above == null || ball.seenY < 0.0 || ball.t - above.t > cfg.crossMaxGapS) return null;
     _above = null;
-    final f = (0.0 - above.my) / (ball.my - above.my);
-    final x = above.mx + f * (ball.mx - above.mx);
-    _crossX = x;
-    return x;
+    final f = (0.0 - above.seenY) / (ball.seenY - above.seenY);
+    return above.seenX + f * (ball.seenX - above.seenX);
+  }
+
+  /// A ball seen at least exitDepth below the rim plane after touching the rim: out of the net, or beside it.
+  ShotEvent? _exit(double t, BallState ball) {
+    if (ball.seenY < cfg.exitDepth) return null;
+    if (ball.seenX.abs() <= cfg.exitMaxAbsX) return _resolve(t, 'make', 'through_net');
+    return _resolve(t, 'miss', 'rim_out');
   }
 
   ShotEvent? _approach(double t, BallState ball) {
@@ -111,47 +116,38 @@ class ShotStateMachine {
         _enter(ShotPhase.pendingMake, t);
       } else if (xCross.abs() <= cfg.rimContactAbsX) {
         _enter(ShotPhase.rattle, t);
+        return _exit(t, ball); // this sighting may already be below the net
       } else {
         return _resolve(t, 'miss', 'wide');
       }
       return null;
     }
-    if (ball.vy < 0.0 && ball.my > -cfg.nearRimHeight && ball.mx.abs() <= cfg.rimContactAbsX) {
+    if (ball.vy < 0.0 && ball.seenY > -cfg.nearRimHeight && ball.seenX.abs() <= cfg.rimContactAbsX) {
       _enter(ShotPhase.rattle, t);
       return null;
     }
-    if (ball.mx.abs() > cfg.approachHalfWidth) return _resolve(t, 'miss', 'left_zone');
+    if (ball.seenX.abs() > cfg.approachHalfWidth) return _resolve(t, 'miss', 'left_zone');
     return null;
   }
 
   ShotEvent? _pendingMake(double t, BallState ball) {
-    if (ball.vy < 0.0 && ball.my < 0.0) {
+    if (ball.vy < 0.0 && ball.seenY < 0.0) {
       _enter(ShotPhase.rattle, t);
       return null;
     }
-    if (ball.my >= cfg.makeConfirmDepth) return _resolve(t, 'make', 'through_rim');
-    // Beside the rim at rim level. Deeper down, a ball leaving the net keeps its sideways speed.
-    if (ball.my > 0.0 && ball.mx.abs() > cfg.netExitMaxAbsX) {
-      return _resolve(t, 'miss', 'rolled_out');
-    }
+    if (ball.seenY >= cfg.makeConfirmDepth) return _resolve(t, 'make', 'through_rim');
     return null;
   }
 
   ShotEvent? _rattle(double t, BallState ball) {
     final xCross = _crossing(ball);
-    if (xCross != null) {
-      if (xCross.abs() <= cfg.makeMaxAbsX) {
-        _enter(ShotPhase.pendingMake, t);
-        return null;
-      }
-      return _resolve(t, 'miss', 'rim_out');
+    if (xCross != null && xCross.abs() <= cfg.makeMaxAbsX) {
+      _enter(ShotPhase.pendingMake, t);
+      return null;
     }
-    if (ball.mx.abs() > cfg.approachHalfWidth) return _resolve(t, 'miss', 'rim_out');
-    final crossX = _crossX;
-    if (ball.my >= cfg.makeConfirmDepth && crossX != null && crossX.abs() > cfg.makeMaxAbsX) {
-      return _resolve(t, 'miss', 'rim_out'); // went down at the edge and never came back through
-    }
-    return null;
+    if (xCross != null && xCross.abs() > cfg.rimContactAbsX) return _resolve(t, 'miss', 'rim_out');
+    if (ball.seenX.abs() > cfg.approachHalfWidth) return _resolve(t, 'miss', 'rim_out');
+    return _exit(t, ball);
   }
 
   void _enter(ShotPhase s, double t) {
@@ -164,7 +160,6 @@ class ShotStateMachine {
     final event = ShotEvent(_shots, outcome, _tStart, t, reason);
     state = ShotPhase.idle;
     _above = null;
-    _crossX = null;
     _cooldownUntil = t + cfg.debounceS;
     return event;
   }

@@ -1,21 +1,21 @@
 import 'dart:math' as math;
 
-/// Origin at rim centre, 1 unit = rim radius, y along "down", x perpendicular to it (to the right).
+/// Rim units, used by all the logic: origin at the rim centre, 1 unit = rim radius, y along [down], x
+/// perpendicular to it (to the right). So y < 0 is above the rim, |x| < 1 is inside it, and the same numbers
+/// work for any video size or distance from the hoop.
 ///
-/// The clicks give only the rim's centre, size and drawn ellipse, NOT the axes: in a photo the rim looks
-/// tilted from perspective, and treating that tilt as horizontal makes a ball falling straight down drift
-/// sideways. [down] is the true vertical in the image: the image vertical for an upright phone (default), later
-/// the phone's gravity sensor. Not the ball's apparent fall direction: perspective bends that (see pipeline).
+/// [down] is the true vertical (image vertical for an upright phone, later the gravity sensor). Not the clicked
+/// rim's tilt, which is perspective and would make a straight fall drift sideways, nor the ball's apparent fall
+/// direction, which perspective also bends.
 class HoopFrame {
   late final double cx;
   late final double cy;
   late final double radiusPx;
   late final (double, double) down;
 
-  /// The rim as clicked (for drawing): angle of left->right.
+  /// The rim as clicked, for drawing only; [ellipseB] is the semi-minor axis in rim units.
   late final double rimAngle;
 
-  /// Ellipse semi-minor axis in hoop units: distance of the front click from the left-right line.
   late final double ellipseB;
 
   HoopFrame(List<num> left, List<num> right, List<num> front, [(double, double) down = (0.0, 1.0)]) {

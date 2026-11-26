@@ -1,4 +1,7 @@
-"""Typed view of shared/config/shot_logic.v<N>.json."""
+"""Typed view of shared/config/shot_logic.v<N>.json.
+
+Distances are in rim units (1 = rim radius, see geometry.py), times in seconds.
+"""
 
 import json
 from dataclasses import dataclass, fields
@@ -9,58 +12,56 @@ from pathlib import Path
 class ShotLogicConfig:
     version: int
 
-    # Candidate filtering. A track starts only on ball_min_conf; once a shot is under way, detections down to
-    # ball_track_min_conf are used too (the ball fades to 15-30% confidence where it overlaps rim, net, board).
+    # --- 1. Which detections count as the ball ---
+    # A track starts only on ball_min_conf; during a shot ball_track_min_conf is enough
+    # (the ball fades to 15-30% confidence where it overlaps rim, net, board).
     ball_min_conf: float
     ball_track_min_conf: float
-    ball_min_size_rim_d: float
+    ball_min_size_rim_d: float  # box size, in rim diameters
     ball_max_size_rim_d: float
+    # Ball-like things that never move (the rim's bracket): a static_cell-sized cell where a ball candidate stayed
+    # in >= static_min_seconds different seconds is ignored, with its neighbours.
+    static_cell: float
+    static_min_seconds: int
 
-    # Tracker (hoop units, seconds)
-    # Fallback only: process() measures gravity (direction and strength) from the ball's free flights.
-    gravity_rim_r_per_s2: float
-    # Gravity fit: windows of this many frames with one ball >= min_conf whose path fits a parabola within
-    # max_rms (rim radii); needs min_windows of them, and "down" within max_tilt_deg of the image vertical.
-    gravity_fit_window: int
-    gravity_fit_min_conf: float
-    gravity_fit_max_rms: float
-    gravity_fit_min_windows: int
-    gravity_max_tilt_deg: float
+    # --- 2. Following the ball (tracker + Kalman) ---
+    gravity_rim_r_per_s2: float  # 9.81 m/s^2 / 0.2286 m rim radius
     kalman_accel_noise: float
     kalman_meas_var: float
     kalman_init_vel_var: float
     gate_chi2: float
-    reacquire_radius: float
-    max_coast_frames: int
-    # After this many frames without a sighting, a credible detection outside the gate restarts the track
-    # (the free-fall prediction has run away from a ball the rim or net stopped).
+    reacquire_radius: float  # nearest detection this close continues the track after a bounce
+    max_coast_frames: int  # frames followed on the prediction alone before the track is dropped
+    # After this many frames without a sighting, a detection outside the gate restarts the track
+    # (the prediction has run away from a ball the rim or net stopped).
     restart_after_coast_frames: int
-    min_hits: int
-
+    min_hits: int  # sightings before a track may start a shot
     # Region where a new track may start
     watch_half_width: float
     watch_top: float
     watch_bottom: float
 
+    # --- 3. Make / miss decisions (state_machine.py) ---
     # Approach zone (above the rim)
     approach_half_width: float
     approach_height: float
-
-    # Make / miss geometry
     make_max_abs_x: float
     rim_contact_abs_x: float
     near_rim_height: float
-    net_exit_max_abs_x: float
     make_confirm_depth: float
-    # Rim crossings are judged between the last ball SEEN above the rim plane and the first one seen below it,
-    # never from predictions; if those two sightings are further apart than this, the crossing is not judged.
+    # Max gap between the last sighting above the rim plane and the first below it for a crossing to count.
     cross_max_gap_s: float
+    # After an edge crossing or a rattle, the first sighting >= exit_depth below the rim plane decides: within
+    # exit_max_abs_x it came out of the net (make), else it fell beside it.
+    # exit_max_abs_x: a ball's centre inside the net is within rim radius - ball radius ~ 0.47.
+    exit_depth: float
+    exit_max_abs_x: float
 
-    # Timing
+    # --- 4. Timeouts ---
     rattle_timeout_s: float
     lost_timeout_s: float
     pending_make_lost_timeout_s: float
-    debounce_s: float
+    debounce_s: float  # no new shot this soon after the last one
 
     @classmethod
     def from_dict(cls, data: dict) -> "ShotLogicConfig":

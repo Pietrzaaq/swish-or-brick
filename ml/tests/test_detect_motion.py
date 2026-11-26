@@ -13,6 +13,8 @@ from brickorswish.detect.motion import (
     pick_scale,
     plan_segments,
     rim_centre,
+    rim_scale_from_ball,
+    scale_hoop,
     should_reanchor,
     shift_hoop,
     stabilize_dets,
@@ -27,7 +29,7 @@ HOOP = {"image_width": 720, "image_height": 1280, "left": [500, 300], "right": [
 
 
 def checks(*poses):
-    """One check per entry, EVERY frames apart. None = hoop not found (low score)."""
+    """None = hoop not found (low score)."""
     out = []
     for k, p in enumerate(poses):
         i = k * EVERY
@@ -46,7 +48,7 @@ class PlanSegmentsTest(unittest.TestCase):
         self.assertEqual((segs[0].from_i, segs[0].to_i), (0, 9 * EVERY))
 
     def test_setup_then_moved_camera(self):
-        # like the full-resolution video: marked, phone handled (hoop not found), then steady 120 px lower
+        # from the full-resolution video: phone handled (hoop not found), then steady 120 px lower
         poses = [(0, 0)] * 4 + [None] * 10 + [(-12, 122)] * 20
         c = checks(*poses)
         segs = plan_segments(c, R, CFG)
@@ -96,7 +98,7 @@ class PlanSegmentsTest(unittest.TestCase):
 
 class ReanchorTest(unittest.TestCase):
     def test_settled_elsewhere_reanchors(self):
-        # like the full-resolution video: tapped during setup, phone settled 177 px lower (weak 0.78 matches)
+        # from the full-resolution video: phone settled 177 px lower, weak 0.78 matches
         c = [Check(150 + k * EVERY, 0, 0.78, -25, 177, 1.0) for k in range(3)]
         self.assertTrue(should_reanchor(c, IDENTITY, R, CFG))
 
@@ -146,7 +148,7 @@ class PickScaleTest(unittest.TestCase):
 
 class BallSizeCheckTest(unittest.TestCase):
     def _dets(self, spans):
-        """spans: (first, last, ball width px); one ball at the rim centre per frame."""
+        """spans: (first, last, ball width px)."""
         c = rim_centre(HOOP)
         frames = []
         for a, b, w in spans:
@@ -156,12 +158,13 @@ class BallSizeCheckTest(unittest.TestCase):
         return {"fps": 30, "frames": frames}
 
     def test_wrong_zoom_in_one_segment_is_flagged(self):
-        # rim width 40 px: 21 px ball = 0.53, 24 px = 0.60 (this run after the wrong 0.80 zoom)
+        # rim width 40 px: ball ratios 0.51 and 0.60, the second after a wrong 0.80 zoom
         segs = [Segment(0, 99, 0, 0, 1.0, 10), Segment(100, 199, 0, 0, 0.8, 10)]
         out = ball_size_check(self._dets([(0, 99, 20.4), (100, 199, 24.0)]), HOOP, segs, CFG)
         self.assertEqual([r["ratio"] for r in out["segments"]], [0.51, 0.6])
-        self.assertEqual(len(out["warnings"]), 1)
+        self.assertFalse(out["segments_agree"])
         self.assertIn("wrong zoom", out["warnings"][0])
+        self.assertIn("0.60 of the rim width", out["warnings"][1])
 
     def test_consistent_real_ball_is_quiet(self):
         segs = [Segment(0, 99, 0, 0, 1.0, 10), Segment(100, 199, 0, 0, 1.0, 10)]
@@ -173,6 +176,32 @@ class BallSizeCheckTest(unittest.TestCase):
         out = ball_size_check(self._dets([(0, 99, 36.0)]), HOOP, segs, CFG)  # ball 0.9 of the rim: taps too narrow
         self.assertEqual(len(out["warnings"]), 1)
         self.assertIn("check the hoop taps", out["warnings"][0])
+
+    def test_rim_on_the_net_hooks_is_rescaled_to_the_ball(self):
+        segs = [Segment(0, 99, 0, 0, 1.0, 10)]
+        out = ball_size_check(self._dets([(0, 99, 24.44)]), HOOP, segs, CFG)  # 0.611: the 9-minute session
+        k = rim_scale_from_ball(out, CFG)
+        self.assertAlmostEqual(k, 0.611 / 0.53, places=3)
+        again = ball_size_check(self._dets([(0, 99, 24.44)]), scale_hoop(HOOP, k), segs, CFG)
+        self.assertAlmostEqual(again["ratio"], 0.53, places=2)
+        self.assertEqual(again["warnings"], [])
+
+    def test_rim_is_kept_when_the_ball_roughly_agrees_or_cannot_be_trusted(self):
+        one = [Segment(0, 99, 0, 0, 1.0, 10)]
+        close = ball_size_check(self._dets([(0, 99, 22.4)]), HOOP, one, CFG)  # 0.56: box a bit large
+        self.assertIsNone(rim_scale_from_ball(close, CFG))
+        few = ball_size_check(self._dets([(0, 29, 24.44)]), HOOP, one, CFG)
+        self.assertIsNone(rim_scale_from_ball(few, CFG))
+        far = ball_size_check(self._dets([(0, 99, 36.0)]), HOOP, one, CFG)  # 0.9: not the rim at all
+        self.assertIsNone(rim_scale_from_ball(far, CFG))
+        two = [Segment(0, 99, 0, 0, 1.0, 10), Segment(100, 199, 0, 0, 0.8, 10)]
+        zoom = ball_size_check(self._dets([(0, 99, 24.44), (100, 199, 30.0)]), HOOP, two, CFG)
+        self.assertIsNone(rim_scale_from_ball(zoom, CFG))
+
+    def test_scale_hoop_keeps_the_centre(self):
+        big = scale_hoop(HOOP, 1.5)
+        self.assertEqual(rim_centre(big), rim_centre(HOOP))
+        self.assertEqual(big["right"][0] - big["left"][0], 60.0)
 
 
 class TransformTest(unittest.TestCase):

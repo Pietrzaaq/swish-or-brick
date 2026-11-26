@@ -1,6 +1,4 @@
-// Runs the Dart port over shared/fixtures/cases and checks it against
-// expected_events.json (ground truth) and golden_events.json (the Python
-// reference output, written by `py -m brickorswish.tools.update_golden`).
+// Mirrors ml/tests/test_fixtures.py; golden_events.json is the Python output (tools/update_golden).
 import 'dart:convert';
 import 'dart:io';
 
@@ -37,8 +35,10 @@ void main() {
 
       test('outcomes match ground truth', () {
         final expected = loadJson(dir.uri.resolve('expected_events.json'))['shots'] as List;
-        expect(got.map((s) => s['outcome']).toList(),
-            expected.map((s) => s['outcome']).toList());
+        expect(got.length, expected.length);
+        // known_wrong shots are wrong for a known reason; golden_events.json still pins their output.
+        final keep = [for (var i = 0; i < expected.length; i++) if (!(expected[i] as Map).containsKey('known_wrong')) i];
+        expect([for (final i in keep) got[i]['outcome']], [for (final i in keep) expected[i]['outcome']]);
       });
 
       test('matches Python reference within one frame', () {

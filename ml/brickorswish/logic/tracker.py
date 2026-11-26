@@ -1,5 +1,5 @@
-"""Single-ball tracker: gated nearest neighbour + per-axis Kalman with a constant acceleration (gravity as the
-ball appears to fall in this video)."""
+"""Single-ball tracker: picks the detection nearest to where the Kalman filter expects the ball, coasts through
+short gaps (net, rim) on the prediction, and restarts when the prediction has run away."""
 
 import math
 from dataclasses import dataclass
@@ -10,33 +10,30 @@ from .kalman import AxisKalman
 
 @dataclass(frozen=True)
 class Candidate:
-    x: float  # hoop units
+    x: float  # rim units
     y: float
     conf: float
 
 
 @dataclass(frozen=True)
 class BallState:
+    """est_*: the Kalman estimate, smooth but it assumes free fall, so it sinks below a ball resting on the rim.
+    seen_*: the detection itself (the prediction while coasting). Rim decisions use seen_*."""
     t: float
-    x: float
-    y: float
+    est_x: float
+    est_y: float
     vx: float
     vy: float
-    observed: bool  # False while coasting on prediction
+    observed: bool  # False while coasting on the prediction
     track_id: int
     hits: int
-    # The detection itself when observed (the prediction while coasting). The filtered x/y assume free fall
-    # and drift below a ball resting on the rim; rim decisions use these instead.
-    mx: float = 0.0
-    my: float = 0.0
+    seen_x: float = 0.0
+    seen_y: float = 0.0
 
 
 class BallTracker:
-    def __init__(self, cfg: ShotLogicConfig, accel: tuple[float, float] | None = None):
-        """accel: the ball's acceleration in flight, (x, y) in rim radii / s^2 in the hoop frame
-        (pipeline.prepare() measures it); default: config gravity straight down."""
+    def __init__(self, cfg: ShotLogicConfig):
         self.cfg = cfg
-        self.accel = (0.0, cfg.gravity_rim_r_per_s2) if accel is None else accel
         self._kx: AxisKalman | None = None
         self._ky: AxisKalman | None = None
         self._last_t = 0.0
@@ -45,14 +42,13 @@ class BallTracker:
         self._track_id = 0
 
     def step(self, t: float, candidates: list[Candidate], start_min_conf: float | None = None) -> BallState | None:
-        """Candidates may be weak (>= ball_track_min_conf): any of them can continue the track, but only one
-        with >= start_min_conf (default ball_min_conf) can start a new one."""
+        """Any candidate can continue the track; only one >= start_min_conf (default ball_min_conf) starts one."""
         cfg = self.cfg
         if self._kx is not None:
             dt = t - self._last_t
             self._last_t = t
-            self._kx.predict(dt, self.accel[0], cfg.kalman_accel_noise)
-            self._ky.predict(dt, self.accel[1], cfg.kalman_accel_noise)
+            self._kx.predict(dt, 0.0, cfg.kalman_accel_noise)
+            self._ky.predict(dt, cfg.gravity_rim_r_per_s2, cfg.kalman_accel_noise)
             match = self._match(candidates)
             if match is not None:
                 cand, manoeuvre = match
@@ -86,16 +82,16 @@ class BallTracker:
         return self._state(t, observed=True, meas=start)
 
     def _match(self, candidates: list[Candidate]) -> tuple[Candidate, bool] | None:
-        """Best candidate inside the chi-square gate; else the nearest one within
-        reacquire_radius, flagged as a manoeuvre (the ball bounced)."""
+        """Best candidate inside the gate; else the nearest within reacquire_radius, flagged as a bounce.
+        The gate: distance from the prediction in standard deviations, squared (gate_chi2 9.21 = 99% of real balls)."""
         cfg = self.cfg
         sx = self._kx.innovation_var(cfg.kalman_meas_var)
         sy = self._ky.innovation_var(cfg.kalman_meas_var)
         best, best_d2 = None, math.inf
         near, near_d = None, math.inf
         for c in candidates:
-            dx = c.x - self._kx.p
-            dy = c.y - self._ky.p
+            dx = c.x - self._kx.pos
+            dy = c.y - self._ky.pos
             d2 = dx * dx / sx + dy * dy / sy
             if d2 < best_d2:
                 best, best_d2 = c, d2
@@ -123,13 +119,13 @@ class BallTracker:
     def _state(self, t: float, observed: bool, meas: Candidate | None = None) -> BallState:
         return BallState(
             t=t,
-            x=self._kx.p,
-            y=self._ky.p,
-            vx=self._kx.v,
-            vy=self._ky.v,
+            est_x=self._kx.pos,
+            est_y=self._ky.pos,
+            vx=self._kx.vel,
+            vy=self._ky.vel,
             observed=observed,
             track_id=self._track_id,
             hits=self._hits,
-            mx=meas.x if meas is not None else self._kx.p,
-            my=meas.y if meas is not None else self._ky.p,
+            seen_x=meas.x if meas is not None else self._kx.pos,
+            seen_y=meas.y if meas is not None else self._ky.pos,
         )

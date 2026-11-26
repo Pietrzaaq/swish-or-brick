@@ -1,4 +1,8 @@
-"""Draws detections, hoop, tracked ball and shot outcomes onto the video. Needs `opencv-python`; ffmpeg optional."""
+"""Draws detections, hoop, tracked ball and shot outcomes onto the video. Needs `opencv-python`; ffmpeg optional.
+
+Browsers (and so viewer/frame_viewer.html) play H.264 or VP8, not OpenCV's own mp4v. With ffmpeg: H.264 .mp4.
+Without it: VP8 .webm from OpenCV's bundled encoder, capped at WEBM_MAX_SIDE (full 1080p VP8 is ~2x slower and
+larger, and the viewer zooms anyway)."""
 
 import math
 import shutil
@@ -6,7 +10,7 @@ import subprocess
 from pathlib import Path
 
 from ..logic import HoopFrame, ShotLogicConfig
-from ..logic.pipeline import ball_candidates, prepare
+from ..logic.pipeline import near_static, ball_candidates, static_spots
 from ..logic.state_machine import MAKE, MISS, ShotStateMachine
 from ..logic.tracker import BallTracker
 from .crop import watch_crop
@@ -24,6 +28,7 @@ WHITE = (255, 255, 255)
 OUTCOME_COLOUR = {MAKE: GREEN, MISS: RED}
 BANNER_S = 1.5
 TRAIL = 20
+WEBM_MAX_SIDE = 1280
 
 
 def annotate_video(
@@ -35,23 +40,28 @@ def annotate_video(
     crop: str = "hoop",
     transforms: list[Transform | None] | None = None,
 ) -> Path:
-    """Writes out_path (H.264 if ffmpeg is available, else mp4v). Re-runs tracker + state machine per frame
-    (same steps as process()) so the overlay shows the live state.
-
-    `detections` are in calibration-frame pixels; `transforms` (camera pose per frame, None = hoop lost)
-    puts the hoop, crop, boxes and ball back where they are in each actual frame."""
+    """Returns the path written (.webm if there is no ffmpeg). Re-runs the same steps as process() per frame so
+    the overlay shows the live state. `detections` are in calibration-frame pixels; `transforms` maps them back."""
     import cv2
 
     out_path = Path(out_path)
-    hf, accel = prepare(detections, hoop, cfg)  # calibration frame + measured ball acceleration: what the logic sees
+    hf = HoopFrame.from_dict(hoop)
+    static = static_spots(detections, hf, cfg)
     c0 = rim_centre(hoop)
-    tracker, machine = BallTracker(cfg, accel), ShotStateMachine(cfg)
-    tilt = math.degrees(math.atan2(-accel[0], accel[1]))
-    gravity_note = f"ball falls at {math.hypot(*accel):.1f} rim r/s2, {tilt:+.1f} deg (perspective)"
+    tracker, machine = BallTracker(cfg), ShotStateMachine(cfg)
     cap = cv2.VideoCapture(str(video_path))
     w, h = int(hoop["image_width"]), int(hoop["image_height"])
-    raw = out_path.with_suffix(".raw.mp4")
-    writer = cv2.VideoWriter(str(raw), cv2.VideoWriter_fourcc(*"mp4v"), float(detections["fps"]), (w, h))
+    fps = float(detections["fps"])
+    ffmpeg = shutil.which("ffmpeg")
+    if ffmpeg:
+        raw, size = out_path.with_suffix(".raw.mp4"), (w, h)
+        writer = cv2.VideoWriter(str(raw), cv2.VideoWriter_fourcc(*"mp4v"), fps, size)
+    else:
+        k = min(1.0, WEBM_MAX_SIDE / max(w, h))
+        raw, size = out_path.with_suffix(".webm"), (int(round(w * k / 2)) * 2, int(round(h * k / 2)) * 2)
+        writer = cv2.VideoWriter(str(raw), cv2.CAP_FFMPEG, cv2.VideoWriter_fourcc(*"VP80"), fps, size)
+    if not writer.isOpened():
+        raise RuntimeError(f"cannot write {raw}: no video encoder available")
     s = max(0.5, min(w, h) / 1080.0)  # text/line scale
     counts = {"make": 0, "miss": 0, "uncertain": 0}
     trail: list[tuple[int, int]] = []
@@ -62,8 +72,8 @@ def annotate_video(
             if not ok:
                 break
             t = float(fr["t"])
-            start_conf = cfg.ball_min_conf if machine.idle else cfg.ball_track_min_conf  # as in logic.process()
-            ball = tracker.step(t, ball_candidates(fr["dets"], hf, cfg), start_conf)
+            start_conf = cfg.ball_min_conf if machine.idle else cfg.ball_track_min_conf
+            ball = tracker.step(t, ball_candidates(fr["dets"], hf, cfg, static), start_conf)
             event = machine.step(t, ball)
             if event is not None:
                 counts[event.outcome] += 1
@@ -86,14 +96,14 @@ def annotate_video(
                 if tr != IDENTITY:
                     hud_extra.append((f"camera moved: hoop ({tr[0]:+.0f}, {tr[1]:+.0f}) px", YELLOW))
                 for d in fr["dets"]:
-                    _draw_det(img, d, hf, cfg, s, c0, tr)
+                    _draw_det(img, d, hf, cfg, s, c0, tr, static)
             if ball is not None and tr_draw is not None:
-                if ball.observed:  # the trail joins real sightings only; a guess is a hollow circle, not a path
-                    p = tuple(int(round(v)) for v in to_frame(*hf.to_pixels(ball.mx, ball.my), c0, tr_draw))
+                if ball.observed:  # trail joins real sightings only; a guess is a hollow circle
+                    p = tuple(int(round(v)) for v in to_frame(*hf.to_pixels(ball.seen_x, ball.seen_y), c0, tr_draw))
                     trail = (trail + [p])[-TRAIL:]
                     cv2.circle(img, p, int(6 * s), GREEN, -1)
                 else:
-                    p = tuple(int(round(v)) for v in to_frame(*hf.to_pixels(ball.x, ball.y), c0, tr_draw))
+                    p = tuple(int(round(v)) for v in to_frame(*hf.to_pixels(ball.est_x, ball.est_y), c0, tr_draw))
                     cv2.circle(img, p, int(6 * s), GREEN, max(1, int(s)))
             else:
                 trail = []
@@ -105,33 +115,31 @@ def annotate_video(
                 f"t={t:.2f}s  frame {fr['i']}",
                 f"state: {machine.state}",
                 f"make {counts['make']}  miss {counts['miss']}  uncertain {counts['uncertain']}",
-                gravity_note,
             ]
             for k, line in enumerate(hud):
                 _text(img, line, (int(12 * s), int((30 + 30 * k) * s)), 0.7 * s, WHITE)
             for k, (line, colour) in enumerate(hud_extra):
-                _text(img, line, (int(12 * s), int((150 + 30 * k) * s)), 0.7 * s, colour)
+                _text(img, line, (int(12 * s), int((120 + 30 * k) * s)), 0.7 * s, colour)
             if banner is not None and t <= banner[2]:
                 _text(img, banner[0], (int(12 * s), int(230 * s)), 1.4 * s, banner[1], thick=3)
-            writer.write(img)
+            writer.write(img if size == (w, h) else cv2.resize(img, size, interpolation=cv2.INTER_AREA))
     finally:
         cap.release()
         writer.release()
 
-    if shutil.which("ffmpeg"):
-        subprocess.run(
-            ["ffmpeg", "-y", "-loglevel", "error", "-i", str(raw), "-c:v", "libx264", "-pix_fmt", "yuv420p",
-             "-crf", "23", "-movflags", "+faststart", str(out_path)],
-            check=True,
-        )
-        raw.unlink()
-    else:
-        raw.replace(out_path)
+    if not ffmpeg:
+        return raw
+    subprocess.run(
+        [ffmpeg, "-y", "-loglevel", "error", "-i", str(raw), "-c:v", "libx264", "-pix_fmt", "yuv420p",
+         "-crf", "23", "-movflags", "+faststart", str(out_path)],
+        check=True,
+    )
+    raw.unlink()
     return out_path
 
 
 def draw_hoop_preview(img, hoop: dict, cfg: ShotLogicConfig, crop_box=None):
-    """Copy of img with the hoop ellipse, approach zone and crop box, to check a calibration."""
+    """Copy of img with the hoop ellipse, approach zone and crop box."""
     import cv2
 
     out = img.copy()
@@ -148,7 +156,7 @@ def draw_hoop_preview(img, hoop: dict, cfg: ShotLogicConfig, crop_box=None):
 
 
 def _draw_hoop(img, hf: HoopFrame, s: float) -> None:
-    """The rim as clicked (its tilt comes from the clicks, not from gravity)."""
+    """Tilt comes from the clicks, not from gravity."""
     import cv2
 
     centre = (int(round(hf.cx)), int(round(hf.cy)))
@@ -158,7 +166,6 @@ def _draw_hoop(img, hf: HoopFrame, s: float) -> None:
 
 
 def _draw_zone(img, hf: HoopFrame, cfg: ShotLogicConfig) -> None:
-    """Approach zone: where a shot attempt starts."""
     import cv2
     import numpy as np
 
@@ -168,8 +175,9 @@ def _draw_zone(img, hf: HoopFrame, cfg: ShotLogicConfig) -> None:
 
 
 def _draw_det(img, d: dict, hf: HoopFrame, cfg: ShotLogicConfig, s: float,
-              c0: tuple[float, float], tr: Transform) -> None:
-    """d is in calibration-frame pixels (what the logic sees); drawn where it is in this frame."""
+              c0: tuple[float, float], tr: Transform, static: frozenset = frozenset()) -> None:
+    """d is in calibration-frame pixels. A 'ball' at a static spot (e.g. the rim's bracket) is drawn dim: the
+    logic ignores it."""
     import cv2
 
     cx, cy = to_frame(d["x"], d["y"], c0, tr)
@@ -178,9 +186,11 @@ def _draw_det(img, d: dict, hf: HoopFrame, cfg: ShotLogicConfig, s: float,
     x1, y1 = int(round(cx + bw / 2)), int(round(cy + bh / 2))
     if d["cls"] == "ball":
         size = hf.size_in_rim_diameters(d["w"], d["h"])
-        used = d["conf"] >= cfg.ball_min_conf and cfg.ball_min_size_rim_d <= size <= cfg.ball_max_size_rim_d
+        is_static = bool(static) and near_static(*hf.to_hoop(d["x"], d["y"]), static, cfg)
+        used = (d["conf"] >= cfg.ball_min_conf and cfg.ball_min_size_rim_d <= size <= cfg.ball_max_size_rim_d
+                and not is_static)
         colour, thick = (ORANGE, max(1, int(2 * s))) if used else (DIM_ORANGE, 1)
-        label = f"{d['conf']:.2f}"
+        label = f"{d['conf']:.2f}" + (" static" if is_static else "")
     elif d["cls"] == "person":
         colour, thick, label = BLUE, 1, None
     else:

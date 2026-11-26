@@ -1,5 +1,3 @@
-"""An interrupted detection run continues where it stopped. Needs opencv + numpy (ml/.venv); skipped otherwise."""
-
 import json
 import tempfile
 import unittest
@@ -16,7 +14,6 @@ N = 40
 
 
 class FakeModel:
-    """One 'sports ball' per image, centred; can crash after a number of images."""
     card = {}
     label = "fake"
 
@@ -69,12 +66,12 @@ class ResumeTest(unittest.TestCase):
 
         second = FakeModel()
         resumed = self._run(second, ckpt, key)
-        self.assertEqual(second.seen, N - 24)      # only the frames not done before
+        self.assertEqual(second.seen, N - 24)
         self.assertEqual(resumed["frames"], whole["frames"])
 
         third = FakeModel()
         self.assertEqual(self._run(third, ckpt, key)["frames"], whole["frames"])
-        self.assertEqual(third.seen, 0)            # finished earlier: nothing to detect
+        self.assertEqual(third.seen, 0)
 
     def test_other_settings_start_from_scratch(self):
         ckpt = self.dir / "progress.json"

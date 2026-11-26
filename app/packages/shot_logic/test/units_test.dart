@@ -59,61 +59,6 @@ void main() {
     });
   });
 
-  group('gravity', () {
-    const hoop = {
-      'image_width': 1920, 'image_height': 1080, //
-      'left': [900, 400], 'right': [1020, 400], 'front': [960, 415],
-    };
-    Map<String, dynamic> flights((double, double) down, double g, {double conf = 0.9}) {
-      const r = 60.0, fps = 30.0;
-      final frames = <Map<String, dynamic>>[];
-      var t = 0.0;
-      for (var k = 0; k < 4; k++) {
-        final x0 = -4.0 + k, y0 = -9.0, vx = 4.0, vy = -6.0 + k;
-        for (var i = 0; i < 20; i++) {
-          final s = i / fps;
-          final x = x0 + vx * s + 0.5 * g * down.$1 * s * s;
-          final y = y0 + vy * s + 0.5 * g * down.$2 * s * s;
-          frames.add({
-            'i': frames.length, 't': t,
-            'dets': [{'cls': 'ball', 'conf': conf, 'x': 960 + x * r, 'y': 400 + y * r, 'w': 63.0, 'h': 63.0}],
-          });
-          t += 1.0 / fps;
-        }
-        frames.add({'i': frames.length, 't': t, 'dets': []});
-        t += 1.0 / fps;
-      }
-      return {'fps': fps, 'frames': frames};
-    }
-
-    test('fit is exact on a parabola', () {
-      final ts = [for (var i = 0; i < 10; i++) i / 30];
-      final (acc, rms) = fitAccel(ts, [for (final t in ts) 3.0 - 2.0 * t + 0.5 * 28.0 * t * t]);
-      expect(acc, closeTo(28.0, 1e-6));
-      expect(rms, lessThan(1e-9));
-    });
-    test('measures the apparent acceleration from flights', () {
-      final cfg = ShotLogicConfig.fromJson(rawConfig());
-      final a = 8.0 * math.pi / 180.0;
-      final down = (-math.sin(a), math.cos(a));
-      final (ax, ay) = estimateGravity(flights(down, 30.0), hoop, cfg)!;
-      expect(ax, closeTo(30.0 * down.$1, 1e-4));
-      expect(ay, closeTo(30.0 * down.$2, 1e-4));
-      final (frame, accel) = prepare(flights(down, 30.0), hoop, cfg);
-      expect(frame.down, (0.0, 1.0)); // axes stay on the true vertical
-      expect(accel.$1, closeTo(ax, 1e-12));
-    });
-    test('falls back without clean flights', () {
-      final cfg = ShotLogicConfig.fromJson(rawConfig());
-      final weak = flights((0.0, 1.0), 30.0, conf: cfg.gravityFitMinConf / 2);
-      expect(estimateGravity(weak, hoop, cfg), isNull);
-      final (frame, accel) = prepare(weak, hoop, cfg);
-      expect(frame.down, (0.0, 1.0));
-      expect(accel, (0.0, cfg.gravityRimRPerS2));
-      expect(estimateGravity(flights((1.0, 0.0), 30.0), hoop, cfg), isNull);
-    });
-  });
-
   group('tracker', () {
     test('coasts then drops', () {
       final cfg = ShotLogicConfig.fromJson(rawConfig());
@@ -124,6 +69,86 @@ void main() {
         expect(tracker.step((2 + k) / 30, [])!.observed, isFalse);
       }
       expect(tracker.step((2 + cfg.maxCoastFrames) / 30, []), isNull);
+    });
+  });
+
+  group('state machine', () {
+    // Mirrors StateMachineTest in ml/tests/test_logic_units.py.
+    BallState ball(double t, double x, double y, {double vy = 10.0}) => BallState(
+        t: t, estX: x, estY: y, vx: 0.0, vy: vy, observed: true, trackId: 1, hits: 9, seenX: x, seenY: y);
+    ShotStateMachine approach() {
+      final sm = ShotStateMachine(ShotLogicConfig.fromJson(rawConfig()));
+      sm.step(0.0, ball(0.0, 0.0, -5.0));
+      expect(sm.state, ShotPhase.approach);
+      return sm;
+    }
+
+    test('rolling on the rim edge then down the net is a make', () {
+      final sm = approach();
+      sm.step(0.1, ball(0.1, -0.32, -0.16));
+      sm.step(0.3, ball(0.3, -1.0, 0.52));
+      expect(sm.state, ShotPhase.pendingMake);
+      expect(sm.step(0.33, ball(0.33, -1.19, 0.74)), isNull);
+      final ev = sm.step(0.6, ball(0.6, -0.28, 2.16))!;
+      expect((ev.outcome, ev.reason), ('make', 'through_rim'));
+    });
+    test('edge crossing then out of the net is a make', () {
+      final sm = approach();
+      sm.step(0.1, ball(0.1, -0.99, -1.45));
+      final ev = sm.step(0.3, ball(0.3, 0.0, 2.31))!;
+      expect((ev.outcome, ev.reason), ('make', 'through_net'));
+    });
+    test('edge crossing then beside the net is a miss', () {
+      final sm = approach();
+      sm.step(0.1, ball(0.1, 1.0, -0.25));
+      sm.step(0.13, ball(0.13, 1.2, 0.5));
+      expect(sm.state, ShotPhase.rattle);
+      final ev = sm.step(0.2, ball(0.2, 1.45, 1.4))!;
+      expect((ev.outcome, ev.reason), ('miss', 'rim_out'));
+    });
+  });
+
+  group('static spots', () {
+    // Mirrors StaticSpotTest in test_logic_units.py: the rim's bracket is detected as a ball.
+    const hoopJson = {
+      'image_width': 1920, 'image_height': 1080, //
+      'left': [900, 400], 'right': [1020, 400], 'front': [960, 415],
+    };
+    Map<String, dynamic> det(double x, double y) =>
+        {'cls': 'ball', 'conf': 0.3, 'x': 960 + 60 * x, 'y': 400 + 60 * y, 'w': 40.0, 'h': 40.0};
+    Map<String, dynamic> session(int bracketSeconds) {
+      final frames = <Map<String, dynamic>>[];
+      for (var i = 0; i < 30 * 30; i++) {
+        final t = i / 30.0;
+        final dets = <Map<String, dynamic>>[
+          if (t.floor() < bracketSeconds && i % 30 < 3) det(1.22, 0.48),
+          if (t >= 10.0 && t < 10.5) det(-3.0 + 6.0 * (t - 10.0), -2.0),
+        ];
+        frames.add({'i': i, 't': t, 'dets': dets});
+      }
+      return {'fps': 30.0, 'frames': frames};
+    }
+
+    test('bracket is ignored and the ball is not', () {
+      final cfg = ShotLogicConfig.fromJson(rawConfig());
+      final hf = HoopFrame.fromJson(hoopJson);
+      final static = staticSpots(session(cfg.staticMinSeconds), hf, cfg);
+      expect(static, isNotEmpty);
+      expect(ballCandidates([det(1.25, 0.45)], hf, cfg, static), isEmpty);
+      expect(ballCandidates([det(1.22, -1.5)], hf, cfg, static), hasLength(1));
+      expect(ballCandidates([det(-2.0, -2.0)], hf, cfg, static), hasLength(1));
+    });
+    test('a spot seen in few seconds is not static', () {
+      final cfg = ShotLogicConfig.fromJson(rawConfig());
+      expect(staticSpots(session(cfg.staticMinSeconds - 1), HoopFrame.fromJson(hoopJson), cfg), isEmpty);
+    });
+    test('balls dropping through the rim centre are not static', () {
+      final cfg = ShotLogicConfig.fromJson(rawConfig());
+      final frames = <Map<String, dynamic>>[
+        for (var i = 0; i < 30 * 30; i++)
+          {'i': i, 't': i / 30.0, 'dets': [if (i % 30 < 6) det(0.0, -2.0 + 0.7 * (i % 30))]},
+      ];
+      expect(staticSpots({'fps': 30.0, 'frames': frames}, HoopFrame.fromJson(hoopJson), cfg), isEmpty);
     });
   });
 }

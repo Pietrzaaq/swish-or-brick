@@ -1,7 +1,4 @@
-"""Shot logic: pure functions, float64 only, no I/O inside process().
-
-Everything in this package must port 1:1 to Dart, so: no numpy, no clocks, no randomness.
-"""
+"""Shot logic. Ported 1:1 to Dart, so: float64 only, no numpy, clocks, randomness or I/O inside process()."""
 
 from .config import ShotLogicConfig
 from .geometry import HoopFrame

@@ -6,3 +6,4 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 SHARED = REPO_ROOT / "shared"
 CONFIG_V1 = SHARED / "config" / "shot_logic.v1.json"
 FIXTURE_CASES = SHARED / "fixtures" / "cases"
+MODEL_PINS = REPO_ROOT / "ml" / "models.sha256"

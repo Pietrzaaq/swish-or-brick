@@ -1,17 +1,13 @@
-"""video + hoop.json -> camera_motion.json, detections.json, events.json, annotated.mp4 in one folder.
+"""video -> rim.json, camera_motion.json, detections.json, events.json, annotated video in one folder.
 
-    python -m brickorswish.detect.run_video VIDEO --hoop hoop.json --out OUT_DIR [--hoop-frame N]
+    python -m brickorswish.detect.run_video VIDEO --out OUT_DIR                       (rim found automatically)
+    python -m brickorswish.detect.run_video VIDEO --out OUT_DIR --hoop hoop.json --hoop-frame N   (your taps)
 
-hoop.json holds your taps on frame N (--hoop-frame). The camera may move afterwards: the hoop is
-re-found every 0.5 s (stabilize.py), detections are mapped back to frame N's pixels, and spans where
-the hoop cannot be found are not counted. --no-stabilize assumes a still camera.
+Without --hoop, check rim_preview.png. The camera may move: detections are mapped back to the calibration
+frame, and spans where the hoop cannot be found are not counted.
 
---resume-dir DIR (e.g. on Google Drive) keeps progress there: the camera-motion result and the detections
-are saved while they are made, and a re-run with the same video, taps and settings continues where the last
-one stopped (Colab can stop long runs). Delete DIR to start from scratch.
-
-With --onnx model.onnx it runs the exported model locally (ml/requirements-local.txt: onnxruntime, numpy,
-opencv-python-headless); without it, rfdetr itself (PyTorch, Colab: ml/notebooks/detect_video.ipynb).
+--resume-dir DIR (e.g. on Google Drive) continues a stopped run (Colab can stop long runs) with the same
+video, taps and settings. Delete DIR to start from scratch.
 """
 
 import argparse
@@ -21,7 +17,8 @@ from pathlib import Path
 
 from ..logic import HoopFrame, ShotLogicConfig, process
 from ..paths import CONFIG_V1
-from .motion import MotionConfig, Segment, ball_size_check, describe, frame_transforms, lost_spans, plan_segments
+from .motion import (MotionConfig, Segment, ball_size_check, describe, frame_transforms, lost_spans, plan_segments,
+                     rim_scale_from_ball, scale_hoop)
 
 
 def run(
@@ -38,6 +35,7 @@ def run(
     stabilize: bool = True,
     motion_cfg: MotionConfig | None = None,
     resume_dir: str | Path | None = None,
+    rim_from_fit: bool = False,
     log=print,
 ) -> dict:
     from .annotate import annotate_video
@@ -66,7 +64,15 @@ def run(
     _dump(out / "detections.json", detections)
 
     if stabilize:
-        sizes = ball_size_check(detections, hoop, [Segment(**s) for s in motion["segments"]], mcfg)
+        segments = [Segment(**s) for s in motion["segments"]]
+        sizes = ball_size_check(detections, hoop, segments, mcfg)
+        k = rim_scale_from_ball(sizes, mcfg) if rim_from_fit else None
+        if k is not None:
+            log(f"  rim rescaled x{k:.2f}: the ball is {sizes['ratio']:.2f} of the fitted rim's width "
+                f"(real ball {sizes['expected']}); the fit was probably on the net hooks")
+            hoop = scale_hoop(hoop, k)
+            _dump(out / "hoop.json", hoop)
+            sizes = {**ball_size_check(detections, hoop, segments, mcfg), "rim_scaled": round(k, 4)}
         for row in sizes["segments"]:
             if row["ratio"] is not None:
                 log(f"  ball / rim width {row['ratio']:.2f} (real ball {sizes['expected']}) in frames "
@@ -84,7 +90,8 @@ def run(
 
     if annotate:
         log("annotating video...")
-        annotate_video(video, out / "annotated.mp4", hoop, detections, cfg, crop, transforms)
+        written = annotate_video(video, out / "annotated.mp4", hoop, detections, cfg, crop, transforms)
+        log(f"  {written.name} (open it in viewer/frame_viewer.html)")
     log(f"written to {out}")
     return events
 
@@ -136,6 +143,36 @@ def _camera_motion(video, hoop: dict, hoop_frame: int, mcfg: MotionConfig, out: 
     return transforms, motion
 
 
+def auto_hoop(video, out_dir, resume_dir=None, log=print) -> tuple[dict, int]:
+    """(hoop, calibration frame) from find_rim. Writes rim.json + rim_preview.png."""
+    import shutil
+
+    from .find_rim import RimConfig, find_rim
+
+    out = Path(out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    key = {"video": Path(video).name, "config": asdict(RimConfig())}
+    cache = Path(resume_dir) / "rim.json" if resume_dir else None
+    result = None
+    if cache is not None and cache.exists() and cache.with_suffix(".png").exists():
+        saved = json.loads(cache.read_text(encoding="utf-8"))
+        if saved.get("resume_key") == key:
+            result = saved
+            shutil.copy(cache.with_suffix(".png"), out / "rim_preview.png")
+            log(f"rim: reusing the result of an earlier run ({cache})")
+    if result is None:
+        log("finding the rim...")
+        result = find_rim(video, log=log, preview_path=out / "rim_preview.png")
+        result["resume_key"] = key
+        if cache is not None:
+            cache.parent.mkdir(parents=True, exist_ok=True)
+            _dump(cache, result)
+            shutil.copy(out / "rim_preview.png", cache.with_suffix(".png"))
+    _dump(out / "rim.json", result)
+    log(f"rim: check {out / 'rim_preview.png'} (yellow = fitted rim)")
+    return result["hoop"], result["hoop_frame"]
+
+
 def _dump(path: Path, data: dict) -> None:
     with open(path, "w", encoding="utf-8") as fh:
         json.dump(data, fh, indent=1)
@@ -145,22 +182,28 @@ def _dump(path: Path, data: dict) -> None:
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("video")
-    ap.add_argument("--hoop", required=True, help="hoop.json (3-click calibration)")
+    ap.add_argument("--hoop", help="hoop.json (3-click calibration); default: find the rim automatically")
     ap.add_argument("--out", required=True, help="output folder")
     ap.add_argument("--onnx", help="exported model (model.onnx + model.json card); default: rfdetr (PyTorch)")
     ap.add_argument("--crop", choices=["hoop", "full"], default="hoop")
     ap.add_argument("--threshold", type=float, default=0.15)
     ap.add_argument("--batch", type=int, default=8)
     ap.add_argument("--no-video", action="store_true", help="skip the annotated video")
-    ap.add_argument("--hoop-frame", type=int, default=0, help="frame index the hoop taps were made on")
+    ap.add_argument("--hoop-frame", type=int, default=0, help="frame index the hoop taps were made on (with --hoop)")
     ap.add_argument("--no-stabilize", action="store_true", help="assume the camera never moves")
     ap.add_argument("--resume-dir", help="keep progress here and continue an interrupted run (e.g. on Google Drive)")
+    ap.add_argument("--rim-from-fit", action="store_true",
+                    help="the --hoop came from find_rim: let the ball's size correct it (always on without --hoop)")
     args = ap.parse_args()
-    with open(args.hoop, encoding="utf-8") as fh:
-        hoop = json.load(fh)
+    if args.hoop:
+        with open(args.hoop, encoding="utf-8") as fh:
+            hoop = json.load(fh)
+        hoop_frame = args.hoop_frame
+    else:
+        hoop, hoop_frame = auto_hoop(args.video, args.out, args.resume_dir)
     run(args.video, hoop, args.out, onnx=args.onnx, crop=args.crop, threshold=args.threshold, batch_size=args.batch,
-        annotate=not args.no_video, hoop_frame=args.hoop_frame, stabilize=not args.no_stabilize,
-        resume_dir=args.resume_dir)
+        annotate=not args.no_video, hoop_frame=hoop_frame, stabilize=not args.no_stabilize,
+        resume_dir=args.resume_dir, rim_from_fit=args.rim_from_fit or not args.hoop)
 
 
 if __name__ == "__main__":

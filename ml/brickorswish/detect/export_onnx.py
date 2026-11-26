@@ -3,12 +3,11 @@
     python -m brickorswish.detect.export_onnx export --out DIR --video VIDEO --hoop hoop.json [--hoop-frame N]
     python -m brickorswish.detect.export_onnx check-minimal DIR/model.onnx --video VIDEO --hoop hoop.json
 
-`export` (needs rfdetr + onnx + onnxruntime) writes DIR/model.onnx, DIR/model.json (the card OnnxDetector
-reads: input, normalisation, classes, SHA-256) and DIR/parity.json, after running rfdetr.predict() and
-OnnxDetector on the same crops of the video and comparing every box. Exit code 1 if they disagree.
+`export` writes DIR/model.onnx, DIR/model.json (card) and DIR/parity.json; exit code 1 if ONNX and rfdetr
+disagree on any box.
 
-`check-minimal` runs in an environment with ONLY onnxruntime + numpy + opencv-python-headless (what the laptop
-has) and fails if the model needs anything else or loads protobuf / flatbuffers / packaging / torch.
+`check-minimal` runs with ONLY onnxruntime + numpy + opencv-python-headless (what the laptop has) and fails if
+the model loads anything else (protobuf, flatbuffers, packaging, torch).
 """
 
 import argparse
@@ -18,14 +17,14 @@ import sys
 from datetime import date
 from pathlib import Path
 
-PARITY_MIN_IOU = 0.9      # every rfdetr box >= COMPARE_CONF must have an ONNX box of the same class this close
-PARITY_MAX_DCONF = 0.05   # ...with a confidence at most this far off
+PARITY_MIN_IOU = 0.9      # every rfdetr box >= COMPARE_CONF needs a same-class ONNX box this close
+PARITY_MAX_DCONF = 0.05
 COMPARE_CONF = 0.3        # = ball_min_conf: the boxes that matter
 LIST_CONF = 0.15          # = detection threshold: a partner may sit just below COMPARE_CONF
 
 
 def sample_crops(video: str, hoop: dict, hoop_frame: int, n: int) -> list[tuple[int, object]]:
-    """n RGB crops of the hoop region (same box detection uses), evenly spread from the tap frame on."""
+    """n RGB crops of the hoop region (same box detection uses), spread from the tap frame on."""
     import cv2
 
     from ..logic import ShotLogicConfig
@@ -60,7 +59,6 @@ def iou(a, b) -> float:
 
 
 def compare(reference: list, candidate: list) -> list[dict]:
-    """Per reference box (>= COMPARE_CONF): best same-class candidate's IoU and confidence difference."""
     rows = []
     for cls, conf, box in reference:
         if conf < COMPARE_CONF:

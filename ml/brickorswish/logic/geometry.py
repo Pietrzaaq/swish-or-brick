@@ -1,15 +1,16 @@
-"""Hoop frame: pixel <-> hoop-unit transform built from the 3-click calibration."""
+"""Hoop frame: pixels <-> rim units, from the rim's left and right edge points."""
 
 import math
 
 
 class HoopFrame:
-    """Origin at rim centre, 1 unit = rim radius, y along "down", x perpendicular to it (to the right).
+    """Rim units, used by all the logic: origin at the rim centre, 1 unit = rim radius, y along `down`, x
+    perpendicular to it (to the right). So y < 0 is above the rim, |x| < 1 is inside it, and the same numbers work
+    for any video size or distance from the hoop.
 
-    The clicks give only the rim's centre, size and drawn ellipse. They do NOT give the axes: in a photo the rim
-    looks tilted from perspective, and treating that tilt as horizontal makes a ball falling straight down drift
-    sideways. `down` is the true vertical in the image: the image vertical for an upright phone (default), later
-    the phone's gravity sensor. Not the ball's apparent fall direction: perspective bends that (see pipeline)."""
+    `down` is the true vertical (image vertical for an upright phone, later the gravity sensor). Not the clicked
+    rim's tilt, which is perspective and would make a straight fall drift sideways, nor the ball's apparent fall
+    direction, which perspective also bends."""
 
     def __init__(self, left, right, front, down=(0.0, 1.0)):
         lx, ly = float(left[0]), float(left[1])
@@ -26,8 +27,7 @@ class HoopFrame:
         self.cy = (ly + ry) / 2.0
         self.radius_px = length / 2.0
         self.down = (gx / g, gy / g)
-        # The rim as clicked (for drawing): angle of left->right, ellipse semi-minor axis in hoop units
-        # = distance of the front click from the left-right line.
+        # The rim as clicked, for drawing only; ellipse_b is the semi-minor axis in rim units.
         self.rim_angle = math.atan2(dy, dx)
         fx, fy = float(front[0]) - self.cx, float(front[1]) - self.cy
         self.ellipse_b = abs(fx * dy - fy * dx) / length / self.radius_px

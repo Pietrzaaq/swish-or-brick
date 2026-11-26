@@ -2,10 +2,8 @@
 
     python -m brickorswish.tools.deps_audit rfdetr opencv-python --pins requirements-colab.txt [--fix]
 
-Walks the installed dependency tree of the given root packages, queries OSV for the exact installed
-versions, prints the result and optionally writes an `==`-pinned requirements file. Exit code 1 if
-anything is vulnerable. --fix upgrades vulnerable packages to their fixed releases first (needs pip).
-Standard library only; sends only package names and versions to api.osv.dev.
+Exit code 1 if anything is vulnerable. Standard library only; sends only package names and versions to
+api.osv.dev.
 """
 
 import argparse
@@ -21,7 +19,7 @@ _NAME = re.compile(r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*)")
 
 
 def normalize(name: str) -> str:
-    """PEP 503 name: lowercase, runs of -_. become one '-'."""
+    """PEP 503 name."""
     return re.sub(r"[-_.]+", "-", name).lower()
 
 
@@ -34,10 +32,9 @@ def requirement_name(req: str) -> str | None:
 
 
 def installed_closure(roots: list[str]) -> dict[str, str]:
-    """{normalized name: installed version} for the roots and everything they require that is installed.
+    """{normalized name: installed version} for the roots and everything installed that they require.
 
-    Environment markers other than `extra` are not evaluated (that needs `packaging`); a requirement
-    that is installed is included, one that is not is skipped. That can only over-include.
+    Environment markers other than `extra` are not evaluated (that needs `packaging`); that can only over-include.
     """
     found: dict[str, str] = {}
     todo = [normalize(r) for r in roots]
@@ -58,7 +55,6 @@ def installed_closure(roots: list[str]) -> dict[str, str]:
 
 
 def osv_vulns(packages: dict[str, str]) -> dict[str, list[str]]:
-    """{name: [OSV ids]} for every package with at least one known vulnerability at its version."""
     names = list(packages)
     queries = [{"package": {"name": n, "ecosystem": "PyPI"}, "version": packages[n]} for n in names]
     out: dict[str, list[str]] = {}
@@ -75,9 +71,8 @@ def osv_vulns(packages: dict[str, str]) -> dict[str, list[str]]:
 
 
 def fixed_version(name: str, version: str) -> str | None:
-    """Smallest release that fixes every OSV advisory affecting name==version, or None if some advisory
-    has no fixed release yet. For each advisory the lowest stable 'fixed' above the installed version is
-    taken (the patch on the nearest line); the answer is the highest of those."""
+    """Smallest release that fixes every OSV advisory for name==version, or None if some advisory has no fix
+    yet. Per advisory the nearest fix above the installed version (the patch on the same line), then the highest."""
     body = json.dumps({"package": {"name": name, "ecosystem": "PyPI"}, "version": version}).encode()
     req = urllib.request.Request("https://api.osv.dev/v1/query", body, {"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=60) as resp:
@@ -85,7 +80,6 @@ def fixed_version(name: str, version: str) -> str | None:
 
 
 def fixed_version_from(name: str, version: str, vulns: list[dict]) -> str | None:
-    """fixed_version() on already fetched OSV vulnerability records."""
     current = version_tuple(version)
     target: str | None = None
     for vuln in vulns:
@@ -106,7 +100,7 @@ def fixed_version_from(name: str, version: str, vulns: list[dict]) -> str | None
 
 
 def version_tuple(version: str) -> tuple[int, ...]:
-    """'2.10.0+cu126' -> (2, 10, 0). Good enough for minimum-version checks."""
+    """'2.10.0+cu126' -> (2, 10, 0)."""
     return tuple(int(p) for p in re.findall(r"\d+", version.split("+")[0])[:3])
 
 
@@ -123,12 +117,8 @@ CLEAN, VULNERABLE, NOTHING_INSTALLED, RESTART_NEEDED = 0, 1, 2, 3
 
 
 def audit(roots: list[str], pins: str | None = None, fix: bool = False) -> int:
-    """Prints the OSV result for the installed tree of `roots`; returns one of the codes above.
-
-    fix=True upgrades each vulnerable package to the smallest release that fixes all its advisories
-    (with pip, from PyPI), then audits again. RESTART_NEEDED: what is installed is clean, but this Python
-    process already imported an older version of some package, so restart it before going on.
-    """
+    """Returns one of the codes above. RESTART_NEEDED: installed is clean, but this process already imported an
+    older version of some package."""
     packages = installed_closure(roots)
     if not packages:
         print("none of the root packages are installed", file=sys.stderr)
@@ -162,7 +152,6 @@ def audit(roots: list[str], pins: str | None = None, fix: bool = False) -> int:
 
 
 def stale_imports(packages: dict[str, str]) -> list[str]:
-    """Already imported modules whose __version__ differs from the installed version of their package."""
     out = set()
     for mod, owners in metadata.packages_distributions().items():
         loaded = getattr(sys.modules.get(mod), "__version__", None)

@@ -1,5 +1,4 @@
-"""ONNX runner: the pre/post-processing around the network. Needs numpy + opencv (ml/.venv); skipped otherwise.
-That it matches rfdetr itself is checked on real frames by `brickorswish.detect.export_onnx export` (Colab)."""
+"""Pre/post-processing only; matching rfdetr is checked on real frames by `export_onnx export` (Colab)."""
 
 import json
 import tempfile
@@ -58,7 +57,7 @@ class PostprocessTest(unittest.TestCase):
         from brickorswish.detect.onnx_model import preprocess
 
         rgb = np.zeros((30, 60, 3), dtype=np.uint8)
-        rgb[..., 0] = 255  # pure red
+        rgb[..., 0] = 255
         x = preprocess(rgb, (384, 384), [0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
         self.assertEqual(x.shape, (1, 3, 384, 384))
         self.assertEqual(x.dtype, np.float32)
@@ -74,6 +73,23 @@ class PostprocessTest(unittest.TestCase):
             (Path(d) / "model.json").write_text(json.dumps({"sha256": "0" * 64}), encoding="utf-8")
             with self.assertRaises(ValueError):
                 OnnxDetector(model)
+
+    def test_refuses_a_model_and_card_swapped_together_if_not_pinned(self):
+        from brickorswish.detect.onnx_model import OnnxDetector, read_pins, sha256_of
+        from brickorswish.paths import MODEL_PINS
+
+        with tempfile.TemporaryDirectory() as d:
+            model = Path(d) / "model.onnx"
+            model.write_bytes(b"some other model")
+            (Path(d) / "model.json").write_text(json.dumps({"sha256": sha256_of(model)}), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "models.sha256"):
+                OnnxDetector(model, pinned=read_pins(MODEL_PINS))
+
+    def test_pins_file_has_the_exported_nano_model(self):
+        from brickorswish.detect.onnx_model import read_pins
+        from brickorswish.paths import MODEL_PINS
+
+        self.assertIn("5434fae86eb34585a033d0e161b7d71ec9f5bfdcc80bbf3e42b37ec4c45fbe19", read_pins(MODEL_PINS))
 
 
 if __name__ == "__main__":

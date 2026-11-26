@@ -1,7 +1,7 @@
 """Write golden_events.json (Python reference output) into every fixture case.
 
-The Dart port must reproduce these within one frame. Re-run after any change to the
-logic or the config, review the diff, and commit it together with the Dart change:
+The Dart port must reproduce these within one frame. Re-run after any logic or config change and commit
+the diff together with the Dart change:
 
     py -m brickorswish.tools.update_golden          (from ml/)
 """

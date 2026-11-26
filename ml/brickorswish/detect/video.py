@@ -1,8 +1,4 @@
-"""Runs RF-DETR Nano over a video and returns detections in shared/schema/detections.schema.json.
-
-The model is either rfdetr itself (PyTorch; Colab, see ml/notebooks/detect_video.ipynb) or the same network
-exported to ONNX (onnx_model.OnnxDetector; runs locally with onnxruntime + numpy + opencv-python-headless).
-"""
+"""Runs RF-DETR Nano (rfdetr in Colab, or its ONNX export locally) over a video -> detections.json."""
 
 import json
 import os
@@ -16,19 +12,19 @@ from .motion import IDENTITY, Transform, rim_centre, shift_hoop, stabilize_dets
 
 
 def load_model(onnx_path: str | Path | None = None):
-    """RF-DETR Nano: the exported ONNX model at `onnx_path` (checked against its model.json card), or else
-    COCO-pretrained rfdetr (PyTorch; downloads the weights on first use)."""
+    """The ONNX model at `onnx_path` (pinned to ml/models.sha256), or else COCO-pretrained rfdetr (PyTorch)."""
     if onnx_path is not None:
-        from .onnx_model import OnnxDetector
+        from ..paths import MODEL_PINS
+        from .onnx_model import OnnxDetector, read_pins
 
-        return OnnxDetector(onnx_path)
+        return OnnxDetector(onnx_path, pinned=read_pins(MODEL_PINS))
     from rfdetr import RFDETRNano
 
     return RFDETRNano()
 
 
 def predict_boxes(model, images, threshold: float) -> list[list[tuple[str, float, tuple]]]:
-    """(class name, confidence, xyxy in image pixels) per box, per image, from either kind of model."""
+    """(class name, confidence, xyxy) per box, per image, from either kind of model."""
     from .onnx_model import Box
 
     results = (model.predict(images, threshold) if hasattr(model, "card")
@@ -94,16 +90,9 @@ def detect_video(
 ) -> dict:
     """Detections in the CALIBRATION frame's pixel coordinates (the frame hoop.json was tapped on).
 
-    crop="hoop" runs on the watch zone around the rim, "full" on the whole frame. `transforms` (from
-    stabilize/motion) gives the camera pose per frame: the crop follows the hoop, boxes are mapped back
-    to the calibration frame, and frames with None (hoop lost) get no detections, so nothing is counted
-    there. Without transforms the camera is assumed still.
-
-    `threshold` is deliberately below cfg.ball_min_conf: the logic does its own filtering, and the
-    low-confidence boxes are useful when judging recall.
-
-    `checkpoint` (a JSON file) is rewritten every `checkpoint_every` frames; a later call with the same
-    `resume_key` skips the frames already done, or returns at once if the earlier call finished.
+    Frames whose transform is None (hoop lost) get no detections, so nothing is counted there.
+    `threshold` is deliberately below cfg.ball_min_conf: the logic filters itself, and low-confidence boxes
+    help judge recall. A later call with the same `resume_key` continues from `checkpoint`.
     """
     import cv2
 
@@ -153,7 +142,7 @@ def detect_video(
 
     try:
         i = 0
-        while i < start_at and cap.grab():  # done in an earlier run: skip without detecting
+        while i < start_at and cap.grab():
             i += 1
         while True:
             ok, bgr = cap.read()
@@ -170,7 +159,7 @@ def detect_video(
             else:
                 tr = transforms[min(i, len(transforms) - 1)]
             if tr is None:
-                frames[i] = {"i": i, "t": frame_time(i, fps), "dets": []}  # hoop lost: detect nothing
+                frames[i] = {"i": i, "t": frame_time(i, fps), "dets": []}
             else:
                 box = watch_crop(shift_hoop(hoop, tr), cfg) if crop == "hoop" else (0, 0, w, h)
                 x0, y0, x1, y1 = box
@@ -197,7 +186,6 @@ def detect_video(
 
 
 def _load_checkpoint(path: Path | None, key) -> dict | None:
-    """The saved progress for this exact job (same key), or None."""
     if path is None or key is None or not Path(path).exists():
         return None
     try:
@@ -208,7 +196,7 @@ def _load_checkpoint(path: Path | None, key) -> dict | None:
 
 
 def _to_dets(boxes, offset: tuple[int, int]) -> list[dict]:
-    """[(class name, confidence, xyxy in crop pixels)] -> detections.json entries in full-frame pixels."""
+    """Crop-pixel boxes -> detections.json entries in full-frame pixels."""
     out = [box_to_det(n, c, xyxy, offset) for n, c, xyxy in boxes]
     out.sort(key=lambda d: (d["cls"] != "ball", -d["conf"]))
     return out

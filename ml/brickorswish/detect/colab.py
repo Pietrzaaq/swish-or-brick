@@ -45,7 +45,7 @@ async function pickHoop(dataUrl, width, height) {
 
 
 def pick_hoop(bgr_frame) -> dict:
-    """Shows the frame in the notebook output and waits for 3 clicks. Returns a hoop.json dict."""
+    """Waits for 3 clicks on the frame in the notebook output."""
     import cv2
     from google.colab import output
     from IPython.display import Javascript, display
