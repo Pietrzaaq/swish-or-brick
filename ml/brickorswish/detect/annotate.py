@@ -10,7 +10,7 @@ import subprocess
 from pathlib import Path
 
 from ..logic import HoopFrame, ShotLogicConfig
-from ..logic.pipeline import near_static, ball_candidates, static_spots
+from ..logic.pipeline import BALL_CLASSES, near_static, ball_candidates, static_spots
 from ..logic.state_machine import MAKE, MISS, ShotStateMachine
 from ..logic.tracker import BallTracker
 from .crop import watch_crop
@@ -184,7 +184,7 @@ def _draw_det(img, d: dict, hf: HoopFrame, cfg: ShotLogicConfig, s: float,
     bw, bh = d["w"] * tr[2], d["h"] * tr[2]
     x0, y0 = int(round(cx - bw / 2)), int(round(cy - bh / 2))
     x1, y1 = int(round(cx + bw / 2)), int(round(cy + bh / 2))
-    if d["cls"] == "ball":
+    if d["cls"] in BALL_CLASSES:
         size = hf.size_in_rim_diameters(d["w"], d["h"])
         is_static = bool(static) and near_static(*hf.to_hoop(d["x"], d["y"]), static, cfg)
         used = (d["conf"] >= cfg.ball_min_conf and cfg.ball_min_size_rim_d <= size <= cfg.ball_max_size_rim_d

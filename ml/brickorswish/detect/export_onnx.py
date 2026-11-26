@@ -1,10 +1,12 @@
-"""Colab: export RF-DETR Nano (COCO) to ONNX for local runs, and prove the ONNX path gives rfdetr's own boxes.
+"""Colab: export RF-DETR Nano to ONNX for local runs, and prove the ONNX path gives rfdetr's own boxes.
 
     python -m brickorswish.detect.export_onnx export --out DIR --video VIDEO --hoop hoop.json [--hoop-frame N]
+        [--weights checkpoint_best_total.pth --classes ball,ball_in_net,rim,person --name brickorswish-v1]
     python -m brickorswish.detect.export_onnx check-minimal DIR/model.onnx --video VIDEO --hoop hoop.json
 
 `export` writes DIR/model.onnx, DIR/model.json (card) and DIR/parity.json; exit code 1 if ONNX and rfdetr
-disagree on any box.
+disagree on any box. Without --weights: the COCO-pretrained Nano; with them: our trained model, whose class
+indices are --classes in order.
 
 `check-minimal` runs with ONLY onnxruntime + numpy + opencv-python-headless (what the laptop has) and fails if
 the model loads anything else (protobuf, flatbuffers, packaging, torch).
@@ -68,7 +70,8 @@ def compare(reference: list, candidate: list) -> list[dict]:
     return rows
 
 
-def export(out: Path, video: str, hoop: dict, hoop_frame: int, n: int, opset: int) -> int:
+def export(out: Path, video: str, hoop: dict, hoop_frame: int, n: int, opset: int, weights: str | None = None,
+           classes: list[str] | None = None, name: str = "rfdetr-nano-coco") -> int:
     from importlib.metadata import version
 
     import onnxruntime as ort
@@ -79,7 +82,9 @@ def export(out: Path, video: str, hoop: dict, hoop_frame: int, n: int, opset: in
     from .video import predict_boxes
 
     out.mkdir(parents=True, exist_ok=True)
-    model = RFDETRNano()
+    model = RFDETRNano(pretrain_weights=weights) if weights else RFDETRNano()
+    names = enumerate(classes) if classes else sorted(COCO_CLASSES.items())
+    class_map = {str(k): v for k, v in names}
     written = model.export(output_dir=str(out / "raw"), opset_version=opset)
     raw = Path(written) if written else next((out / "raw").glob("*.onnx"))
     onnx_path = out / "model.onnx"
@@ -97,7 +102,7 @@ def export(out: Path, video: str, hoop: dict, hoop_frame: int, n: int, opset: in
     for holder in (getattr(model, "model_config", None), getattr(getattr(model, "model", None), "args", None)):
         num_select = int(getattr(holder, "num_select", num_select) or num_select)
     card = {
-        "label": f"rfdetr-nano-coco rfdetr {version('rfdetr')} opset {opset}",
+        "label": f"{name} rfdetr {version('rfdetr')} opset {opset}",
         "exported": date.today().isoformat(),
         "sha256": sha256_of(onnx_path),
         "input_name": inp.name,
@@ -107,7 +112,7 @@ def export(out: Path, video: str, hoop: dict, hoop_frame: int, n: int, opset: in
         "stds": [float(v) for v in model.stds],
         "resize": "stretch, bilinear, no antialias (cv2.INTER_LINEAR)",
         "num_select": num_select,
-        "classes": {str(k): v for k, v in sorted(COCO_CLASSES.items())},
+        "classes": class_map,
     }
     (out / "model.json").write_text(json.dumps(card, indent=1), encoding="utf-8")
     print(f"model.onnx {onnx_path.stat().st_size / 1e6:.1f} MB, sha256 {card['sha256']}")
@@ -116,13 +121,13 @@ def export(out: Path, video: str, hoop: dict, hoop_frame: int, n: int, opset: in
     crops = sample_crops(video, hoop, hoop_frame, n)
     rows = []
     for i, rgb in crops:
-        ref = predict_boxes(model, [rgb], LIST_CONF)[0]
+        ref = predict_boxes(model, [rgb], LIST_CONF, classes)[0]
         got = predict_boxes(onnx_model, [rgb], LIST_CONF)[0]
         rows += [{"frame": i, **r} for r in compare(ref, got)]
     worst_iou = min((r["iou"] for r in rows), default=1.0)
     worst_dconf = max((r["dconf"] for r in rows), default=0.0)
     ok = worst_iou >= PARITY_MIN_IOU and worst_dconf <= PARITY_MAX_DCONF
-    summary = {"frames": len(crops), "boxes_compared": len(rows), "balls_compared": sum(r["cls"] == "sports ball" for r in rows),
+    summary = {"frames": len(crops), "boxes_compared": len(rows), "balls_compared": sum(r["cls"] in ("sports ball", "ball", "ball_in_net") for r in rows),
                "worst_iou": worst_iou, "worst_conf_diff": worst_dconf, "ok": ok}
     (out / "parity.json").write_text(json.dumps({"summary": summary, "boxes": rows}, indent=1), encoding="utf-8")
     print(f"parity on {len(crops)} frames: {len(rows)} boxes >= {COMPARE_CONF} compared "
@@ -151,6 +156,9 @@ def main() -> int:
     e.add_argument("--out", required=True)
     e.add_argument("--opset", type=int, default=17)
     e.add_argument("--frames", type=int, default=60, help="frames to compare rfdetr and ONNX on")
+    e.add_argument("--weights", help="trained checkpoint (brickorswish.train.fit); default: COCO-pretrained")
+    e.add_argument("--classes", help="with --weights: class names in index order, comma-separated")
+    e.add_argument("--name", default="rfdetr-nano-coco", help="model name in the card")
     m = sub.add_parser("check-minimal")
     m.add_argument("model")
     for p in (e, m):
@@ -160,7 +168,11 @@ def main() -> int:
     args = ap.parse_args()
     hoop = json.loads(Path(args.hoop).read_text(encoding="utf-8"))
     if args.cmd == "export":
-        return export(Path(args.out), args.video, hoop, args.hoop_frame, args.frames, args.opset)
+        if bool(args.weights) != bool(args.classes):
+            ap.error("--weights and --classes go together")
+        classes = args.classes.split(",") if args.classes else None
+        return export(Path(args.out), args.video, hoop, args.hoop_frame, args.frames, args.opset,
+                      args.weights, classes, args.name)
     return check_minimal(Path(args.model), args.video, hoop, args.hoop_frame)
 
 

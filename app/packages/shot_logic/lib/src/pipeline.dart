@@ -3,13 +3,16 @@ import 'geometry.dart';
 import 'state_machine.dart';
 import 'tracker.dart';
 
+/// ball_in_net comes from our trained detector: still the ball, seen through the net.
+const ballClasses = {'ball', 'ball_in_net'};
+
 List<Candidate> ballCandidates(List<dynamic> dets, HoopFrame hoop, ShotLogicConfig cfg,
     [Set<(int, int)> static = const {}]) {
   final out = <Candidate>[];
   for (final raw in dets) {
     final d = raw as Map<String, dynamic>;
     final conf = (d['conf'] as num).toDouble();
-    if (d['cls'] != 'ball' || conf < cfg.ballTrackMinConf) continue;
+    if (!ballClasses.contains(d['cls']) || conf < cfg.ballTrackMinConf) continue;
     final size = hoop.sizeInRimDiameters((d['w'] as num).toDouble(), (d['h'] as num).toDouble());
     if (!(cfg.ballMinSizeRimD <= size && size <= cfg.ballMaxSizeRimD)) continue;
     final (x, y) = hoop.toHoop((d['x'] as num).toDouble(), (d['y'] as num).toDouble());

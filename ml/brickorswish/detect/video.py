@@ -23,8 +23,10 @@ def load_model(onnx_path: str | Path | None = None):
     return RFDETRNano()
 
 
-def predict_boxes(model, images, threshold: float) -> list[list[tuple[str, float, tuple]]]:
-    """(class name, confidence, xyxy) per box, per image, from either kind of model."""
+def predict_boxes(model, images, threshold: float,
+                  class_names: list[str] | None = None) -> list[list[tuple[str, float, tuple]]]:
+    """(class name, confidence, xyxy) per box, per image, from either kind of model. class_names: index -> name
+    for a trained rfdetr model (it can fall back to COCO names when they are missing from the checkpoint)."""
     from .onnx_model import Box
 
     results = (model.predict(images, threshold) if hasattr(model, "card")
@@ -37,6 +39,8 @@ def predict_boxes(model, images, threshold: float) -> list[list[tuple[str, float
             out.append([(b.cls, b.conf, b.xyxy) for b in dets])
             continue
         names = dets.data.get("class_name") if dets.data else None
+        if class_names is not None:
+            names = [class_names[int(c)] if int(c) < len(class_names) else str(int(c)) for c in dets.class_id]
         if names is None:
             from rfdetr.assets.coco_classes import COCO_CLASSES
 

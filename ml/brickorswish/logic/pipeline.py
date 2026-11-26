@@ -7,12 +7,15 @@ from .geometry import HoopFrame
 from .state_machine import ShotStateMachine
 from .tracker import BallTracker, Candidate
 
+# ball_in_net comes from our trained detector: still the ball, seen through the net.
+BALL_CLASSES = ("ball", "ball_in_net")
+
 
 def ball_candidates(dets: list[dict], hoop: HoopFrame, cfg: ShotLogicConfig,
                     static: frozenset = frozenset()) -> list[Candidate]:
     out = []
     for d in dets:
-        if d["cls"] != "ball" or d["conf"] < cfg.ball_track_min_conf:
+        if d["cls"] not in BALL_CLASSES or d["conf"] < cfg.ball_track_min_conf:
             continue
         size = hoop.size_in_rim_diameters(d["w"], d["h"])
         if not (cfg.ball_min_size_rim_d <= size <= cfg.ball_max_size_rim_d):
