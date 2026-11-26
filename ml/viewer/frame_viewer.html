@@ -4,8 +4,6 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Frame viewer</title>
-<!-- BrickOrSwish frame viewer. Open this file in Chrome/Edge (double-click). Everything stays on this computer:
-     no network, no libraries; the video is read locally by the browser. -->
 <style>
   :root { --bg:#111; --panel:#1c1c1c; --line:#333; --text:#ddd; --dim:#888; --accent:#ff7a2f; --make:#3fb950; --miss:#f85149; --unc:#d29922; }
   * { box-sizing: border-box; }
@@ -35,11 +33,11 @@
 <div id="main">
   <div id="stage">
     <video id="v" preload="auto" playsinline></video>
-    <div id="drop">Drop the results folder's files here: <b>annotated.mp4</b> plus, optionally,
+    <div id="drop">Drop the results folder's files here: <b>annotated.mp4</b> (or <b>annotated.webm</b> from a local run) plus, optionally,
       events.json, labels.json, detections.json, camera_motion.json.<br>Or use “Open files” below.</div>
   </div>
   <div id="bar">
-    <input id="files" type="file" multiple accept=".mp4,.mov,.json,video/*,application/json" hidden>
+    <input id="files" type="file" multiple accept=".mp4,.webm,.mov,.json,video/*,application/json" hidden>
     <button id="open">Open files</button>
     <button id="back10" title="Shift+←">−10</button>
     <button id="back1" title="←">◀ 1</button>
@@ -93,7 +91,7 @@ function track() {
 
 function loadFiles(list) {
   for (const file of list) {
-    if (file.type.startsWith("video/") || /\.(mp4|mov|m4v)$/i.test(file.name)) {
+    if (file.type.startsWith("video/") || /\.(mp4|mov|m4v|webm)$/i.test(file.name)) {
       v.src = URL.createObjectURL(file);
       videoName = file.name.replace(/\.[^.]+$/, "");
       $("drop").style.display = "none";
@@ -114,7 +112,7 @@ function useJson(name, data) {
   }
 }
 function truthFor(n) {
-  // labels.json from eval/score.py: {"truth": "XOO", ...}, one letter per detected shot in order
+  // labels.json truth: one letter per detected shot, in order
   const letter = labels && typeof labels.truth === "string" ? labels.truth[n - 1] : null;
   return { O: "make", X: "miss", "-": "not a shot" }[letter] || null;
 }

@@ -1,0 +1,4 @@
+# Models allowed for local runs (run_video --onnx). One SHA-256 per line, then a note.
+# The checksum in model.json travels with the model (Drive); this list is in git, so a swapped model.onnx
+# AND model.json are still refused. New model: check its export output in Colab, then add its line here.
+5434fae86eb34585a033d0e161b7d71ec9f5bfdcc80bbf3e42b37ec4c45fbe19  rfdetr-nano-coco, Colab export 2026-11-23, parity worst IoU 0.995

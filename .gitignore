@@ -13,3 +13,4 @@ __pycache__/
 
 # Exported detector models (100+ MB): Drive / Colab output, never committed
 /ml/models/
+/ml/videos/
