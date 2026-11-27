@@ -4,6 +4,7 @@ from brickorswish.tools.deps_audit import (
     fixed_version_from,
     installed_closure,
     normalize,
+    parse_spec,
     requirement_name,
     version_tuple,
 )
@@ -15,6 +16,14 @@ class DepsAuditTest(unittest.TestCase):
         self.assertEqual(requirement_name("pyDeprecate<0.10,>=0.9"), "pydeprecate")
         self.assertEqual(requirement_name('torch==2.9.*; sys_platform == "linux"'), "torch")
         self.assertIsNone(requirement_name('peft; extra == "lora"'))
+        train = frozenset({"train"})
+        self.assertEqual(requirement_name('pytorch_lightning<3,>=2.6; extra == "train"', train), "pytorch-lightning")
+        self.assertIsNone(requirement_name('wandb; extra == "loggers"', train))
+
+    def test_parse_spec(self):
+        self.assertEqual(parse_spec("rfdetr[train]"), ("rfdetr", frozenset({"train"})))
+        self.assertEqual(parse_spec("torchmetrics[detection]<1.9.0,>=1.8.2"), ("torchmetrics", frozenset({"detection"})))
+        self.assertEqual(parse_spec("numpy"), ("numpy", frozenset()))
 
     def test_normalize(self):
         self.assertEqual(normalize("Typing_Extensions"), "typing-extensions")

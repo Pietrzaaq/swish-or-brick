@@ -15,7 +15,8 @@ import urllib.request
 from importlib import metadata
 
 OSV_BATCH = "https://api.osv.dev/v1/querybatch"
-_NAME = re.compile(r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*)")
+_NAME = re.compile(r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*)\s*(?:\[([^\]]*)\])?")
+_EXTRA = re.compile(r"""extra\s*==\s*["']([^"']+)["']""")
 
 
 def normalize(name: str) -> str:
@@ -23,34 +24,46 @@ def normalize(name: str) -> str:
     return re.sub(r"[-_.]+", "-", name).lower()
 
 
-def requirement_name(req: str) -> str | None:
-    """Name of a Requires-Dist entry, or None for extras-only requirements (`; extra == "x"`)."""
-    if re.search(r"""extra\s*==""", req):
+def parse_spec(spec: str) -> tuple[str, frozenset[str]] | None:
+    """'rfdetr[train]' -> ('rfdetr', {'train'})."""
+    m = _NAME.match(spec)
+    if not m:
         return None
-    m = _NAME.match(req)
-    return normalize(m.group(1)) if m else None
+    return normalize(m.group(1)), frozenset(normalize(e) for e in (m.group(2) or "").split(",") if e.strip())
+
+
+def requirement_name(req: str, extras: frozenset[str] = frozenset()) -> str | None:
+    """Name of a Requires-Dist entry; None if it belongs to an extra that was not asked for (`; extra == "x"`)."""
+    m = _EXTRA.search(req)
+    if m and normalize(m.group(1)) not in extras:
+        return None
+    spec = parse_spec(req)
+    return spec[0] if spec else None
 
 
 def installed_closure(roots: list[str]) -> dict[str, str]:
-    """{normalized name: installed version} for the roots and everything installed that they require.
+    """{normalized name: installed version} for the roots (with extras: 'rfdetr[train]') and everything installed
+    that they require.
 
     Environment markers other than `extra` are not evaluated (that needs `packaging`); that can only over-include.
     """
     found: dict[str, str] = {}
-    todo = [normalize(r) for r in roots]
+    walked: set[tuple[str, frozenset[str]]] = set()
+    todo = [s for s in map(parse_spec, roots) if s]
     while todo:
-        name = todo.pop()
-        if name in found:
+        name, extras = todo.pop()
+        if (name, extras) in walked:
             continue
+        walked.add((name, extras))
         try:
             dist = metadata.distribution(name)
         except metadata.PackageNotFoundError:
             continue
         found[name] = dist.version
         for req in dist.requires or []:
-            dep = requirement_name(req)
-            if dep and dep not in found:
-                todo.append(dep)
+            dep = requirement_name(req, extras)
+            if dep:
+                todo.append(parse_spec(req.split(";")[0]))
     return dict(sorted(found.items()))
 
 
